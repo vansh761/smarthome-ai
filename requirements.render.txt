@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+sqlalchemy
+aiosqlite
+databases
+scikit-learn
+xgboost
+pandas
+numpy
+joblib
+textblob
+pydantic
+python-multipart
+chromadb
+requests
+paho-mqtt

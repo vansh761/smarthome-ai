@@ -12,6 +12,7 @@ from app.routers import hardware
 from app.routers import weather
 from app.routers import evaluation
 from app.routers import mqtt
+from app.routers import demo
 
 app = FastAPI(
     title        = "AI Smart Home Intelligence System",
@@ -36,6 +37,8 @@ app.add_middleware(
 )
 
 
+import os
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -48,19 +51,22 @@ def startup():
     except Exception as e:
         print(f"Memory store failed: {e}")
 
-    try:
-        from app.ai.semantic_emotion import get_reference_embeddings
-        get_reference_embeddings()
-        print("Semantic model ready")
-    except Exception as e:
-        print(f"Semantic model failed: {e}")
+    if not os.getenv("DISABLE_HEAVY_MODELS"):
+        try:
+            from app.ai.semantic_emotion import get_reference_embeddings
+            get_reference_embeddings()
+            print("Semantic model ready")
+        except Exception as e:
+            print(f"Semantic model failed: {e}")
 
-    try:
-        from app.ai.zero_shot_fallback import get_classifier
-        get_classifier()
-        print("Zero-shot fallback model ready")
-    except Exception as e:
-        print(f"Zero-shot model failed: {e}")
+        try:
+            from app.ai.zero_shot_fallback import get_classifier
+            get_classifier()
+            print("Zero-shot fallback model ready")
+        except Exception as e:
+            print(f"Zero-shot model failed: {e}")
+    else:
+        print("Heavy models disabled for deployment")
 
     try:
         from app.hardware.device_registry import setup_virtual_home
@@ -81,6 +87,7 @@ app.include_router(hardware.router)
 app.include_router(weather.router)
 app.include_router(evaluation.router)
 app.include_router(mqtt.router)
+app.include_router(demo.router)
 
 @app.get("/")
 def root():

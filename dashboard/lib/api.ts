@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export async function fetchRooms(): Promise<string[]> {
   const res = await fetch(`${API_BASE}/environment/rooms`);

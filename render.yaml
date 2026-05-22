@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: smarthome-ai-backend
+    runtime: python
+    buildCommand: pip install -r requirements.render.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DISABLE_HEAVY_MODELS
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.10.0"
