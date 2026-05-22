@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.git
+.gitignore
+dashboard/node_modules/
+dashboard/.next/
+*.db
+memory_db/
+models/

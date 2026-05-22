@@ -1,0 +1,18 @@
+fastapi
+uvicorn
+sqlalchemy
+aiosqlite
+databases
+scikit-learn
+xgboost
+pandas
+numpy
+joblib
+textblob
+chromadb
+pydantic
+python-multipart
+torch --index-url https://download.pytorch.org/whl/cpu
+torchvision --index-url https://download.pytorch.org/whl/cpu
+sentence-transformers
+transformers

@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.db
+memory_db/
+models/
+dashboard/node_modules/
+dashboard/.next/
+wheels/
+*.joblib
