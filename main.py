@@ -29,13 +29,12 @@ app.add_middleware(
     allow_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://dashboard:3000",
-        "*",  # allows any origin — update to specific URL after deployment
+        "https://smarthome-ai-nine.vercel.app",
+        "*",
     ],
     allow_methods = ["*"],
     allow_headers = ["*"],
 )
-
 
 import os
 
