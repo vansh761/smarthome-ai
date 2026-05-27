@@ -14,7 +14,9 @@ ROOMS = ["bedroom", "living_room", "kitchen", "office"]
 
 def get_current_weather(city: str = "delhi") -> dict:
     from datetime import datetime, timedelta
+
     now = datetime.now()
+
     if (
         _weather_cache["data"] is not None and
         _weather_cache["city"] == city and
@@ -23,11 +25,12 @@ def get_current_weather(city: str = "delhi") -> dict:
     ):
         return _weather_cache["data"]
 
-    weather = get_weather_by_city(city)
+    weather = get_weather_by_place(city)
+
     if "error" not in weather:
-        _weather_cache["data"]      = weather
+        _weather_cache["data"] = weather
         _weather_cache["timestamp"] = now
-        _weather_cache["city"]      = city
+        _weather_cache["city"] = city
 
     return weather
 
