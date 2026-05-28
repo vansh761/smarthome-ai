@@ -86,8 +86,22 @@ def simulate_room(room: str) -> EnvironmentState:
     power += random.uniform(-20, 20)
     
     # Comfort score (simple formula for now, AI will replace this later)
-    temp_score = 100 - abs(temperature - 23) * 10
-    noise_score = 100 - (noise / 80 * 100)
+    # Comfort score — realistic formula
+    # Temperature: optimal 22-24°C, penalty increases gradually
+    temp_diff = abs(temperature - 23)
+    if temp_diff <= 2:
+        temp_score = 100
+    elif temp_diff <= 5:
+        temp_score = 100 - (temp_diff - 2) * 8
+    elif temp_diff <= 10:
+        temp_score = 76 - (temp_diff - 5) * 6
+    else:
+        temp_score = max(10, 46 - (temp_diff - 10) * 3)
+
+    # Noise: optimal below 35dB
+    noise_diff = max(0, noise - 35)
+    noise_score = max(20, 100 - noise_diff * 2.5)
+
     comfort = round((temp_score * 0.6 + noise_score * 0.4), 1)
     comfort = max(0, min(100, comfort))
     
