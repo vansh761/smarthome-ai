@@ -132,30 +132,45 @@ def simulate_room(room: str) -> EnvironmentState:
     comfort = max(0, min(100, comfort))
 
     # Outside noise based on time of day
-    time_of_day = get_time_of_day()
-    likely_sounds = SOUND_BY_TIME.get(time_of_day, ["silence"])
+    # Outside noise
+    time_of_day  = get_time_of_day()
+    likely_sounds= SOUND_BY_TIME.get(time_of_day, ["silence"])
     sound_key    = random.choice(likely_sounds)
     sound_data   = next(
         (s for s in OUTSIDE_SOUNDS if s["source"] == sound_key),
-        OUTSIDE_SOUNDS[5]
+        {"source": "silence", "db": 25, "description": "Quiet outside"}
     )
-    outside_db   = sound_data["db"] + random.uniform(-5, 5)
-    
+    outside_db   = round(sound_data["db"] + random.uniform(-5, 5), 1)
+
+    # Impact of outside noise on indoor
+    if outside_db > 80:
+        noise_impact = "High outside noise — close windows immediately"
+    elif outside_db > 65:
+        noise_impact = "Moderate outside noise — consider closing windows"
+    elif outside_db > 45:
+        noise_impact = "Low outside noise — windows can stay open"
+    else:
+        noise_impact = "Quiet outside — ideal for ventilation"
+
     return EnvironmentState(
-        timestamp           = datetime.now(),
-        room                = room,
-        temperature_c       = round(temperature, 1),
-        humidity_percent    = round(
+        timestamp            = datetime.now(),
+        room                 = room,
+        temperature_c        = round(temperature, 1),
+        humidity_percent     = round(
             real_humidity if real_humidity else random.uniform(40, 70), 1
         ),
-        light_level         = light_level,
-        light_color         = color_map[time_of_day],
-        noise_db            = round(noise, 1),
-        music_playing       = random.choice([True, False]),
-        power_watts         = round(power, 1),
-        ac_on               = ac_on,
-        fan_on              = fan_on,
-        comfort_score       = comfort,
+        light_level          = light_level,
+        light_color          = color_map[time_of_day],
+        noise_db             = round(noise, 1),
+        music_playing        = random.choice([True, False]),
+        power_watts          = round(power, 1),
+        ac_on                = ac_on,
+        fan_on               = fan_on,
+        comfort_score        = comfort,
+        outside_noise_source = sound_data["source"],
+        outside_noise_db     = outside_db,
+        outside_noise_desc   = sound_data["description"],
+        outside_noise_impact = noise_impact,
     )
 
 def simulate_all_rooms() -> dict:
