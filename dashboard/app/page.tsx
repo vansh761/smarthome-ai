@@ -37,14 +37,15 @@ interface HistoryEntry {
 
 // ── Helpers ────────────────────────────────────────────────────
 function comfortColor(score: number) {
-  if (score >= 75) return "text-green-400";
-  if (score >= 50) return "text-yellow-400";
+  if (score >= 70) return "text-green-400";
+  if (score >= 45) return "text-yellow-400";
   return "text-red-400";
 }
 
 function comfortLabel(score: number) {
-  if (score >= 75) return "Comfortable";
-  if (score >= 50) return "Moderate";
+  if (score >= 70) return "Comfortable";
+  if (score >= 45) return "Moderate";
+  if (score >= 25) return "Warm — AC recommended";
   return "Uncomfortable";
 }
 
