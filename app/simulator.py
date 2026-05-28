@@ -2,7 +2,8 @@ import random
 from datetime import datetime
 from app.models.environment import EnvironmentState
 from app.hardware.weather import get_weather_by_place
-
+import random
+from datetime import datetime
 
 
 # Cache weather for 10 minutes to avoid too many API calls
@@ -11,6 +12,31 @@ _weather_cache = {"data": None, "timestamp": None, "city": None}
 # Rooms in our virtual house
 ROOMS = ["bedroom", "living_room", "kitchen", "office"]
 
+
+OUTSIDE_SOUNDS = [
+    {"source": "traffic",         "db": 75, "description": "Vehicles passing"},
+    {"source": "construction",    "db": 92, "description": "Nearby construction work"},
+    {"source": "rain",            "db": 51, "description": "Rain on windows"},
+    {"source": "dog_barking",     "db": 68, "description": "Dog barking outside"},
+    {"source": "people_talking",  "db": 58, "description": "Voices from street"},
+    {"source": "silence",         "db": 22, "description": "Quiet outside"},
+    {"source": "wind",            "db": 45, "description": "Wind blowing"},
+    {"source": "market_noise",    "db": 80, "description": "Market or crowd noise"},
+    {"source": "vehicle_horn",    "db": 85, "description": "Vehicle horn"},
+    {"source": "music_outside",   "db": 70, "description": "Music from neighbours"},
+    {"source": "birds",           "db": 40, "description": "Birds chirping"},
+    {"source": "temple_prayers",  "db": 72, "description": "Nearby temple prayers"},
+    {"source": "train",           "db": 88, "description": "Train passing nearby"},
+    {"source": "airplane",        "db": 78, "description": "Airplane overhead"},
+    {"source": "generator",       "db": 82, "description": "Generator noise"},
+]
+
+SOUND_BY_TIME = {
+    "morning":   ["birds", "traffic", "market_noise", "people_talking"],
+    "afternoon": ["traffic", "construction", "vehicle_horn", "market_noise"],
+    "evening":   ["traffic", "people_talking", "music_outside", "temple_prayers"],
+    "night":     ["silence", "wind", "dog_barking", "rain"],
+}
 
 def get_current_weather(city: str = "delhi") -> dict:
     from datetime import datetime, timedelta
@@ -104,22 +130,32 @@ def simulate_room(room: str) -> EnvironmentState:
 
     comfort = round((temp_score * 0.6 + noise_score * 0.4), 1)
     comfort = max(0, min(100, comfort))
+
+    # Outside noise based on time of day
+    time_of_day = get_time_of_day()
+    likely_sounds = SOUND_BY_TIME.get(time_of_day, ["silence"])
+    sound_key    = random.choice(likely_sounds)
+    sound_data   = next(
+        (s for s in OUTSIDE_SOUNDS if s["source"] == sound_key),
+        OUTSIDE_SOUNDS[5]
+    )
+    outside_db   = sound_data["db"] + random.uniform(-5, 5)
     
     return EnvironmentState(
-        timestamp=datetime.now(),
-        room=room,
-        temperature_c=round(temperature, 1),
-        humidity_percent=round(
+        timestamp           = datetime.now(),
+        room                = room,
+        temperature_c       = round(temperature, 1),
+        humidity_percent    = round(
             real_humidity if real_humidity else random.uniform(40, 70), 1
         ),
-        light_level=light_level,
-        light_color=color_map[time_of_day],
-        noise_db=round(noise, 1),
-        music_playing=random.choice([True, False]),
-        power_watts=round(power, 1),
-        ac_on=ac_on,
-        fan_on=fan_on,
-        comfort_score=comfort
+        light_level         = light_level,
+        light_color         = color_map[time_of_day],
+        noise_db            = round(noise, 1),
+        music_playing       = random.choice([True, False]),
+        power_watts         = round(power, 1),
+        ac_on               = ac_on,
+        fan_on              = fan_on,
+        comfort_score       = comfort,
     )
 
 def simulate_all_rooms() -> dict:
