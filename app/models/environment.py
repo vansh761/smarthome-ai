@@ -1,7 +1,40 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
 
+class EnvironmentState(BaseModel):
+    timestamp:             datetime
+    room:                  str
+
+    # Climate
+    temperature_c:         float
+    humidity_percent:      float
+
+    # Lighting
+    light_level:           int
+    light_color:           str
+
+    # Sound
+    noise_db:              float
+    music_playing:         bool
+
+    # Power
+    power_watts:           float
+    ac_on:                 bool
+    fan_on:                bool
+
+    # Comfort
+    comfort_score:         Optional[float] = None
+
+    # Outside noise — new
+    outside_noise_source:  Optional[str]   = None
+    outside_noise_db:      Optional[float] = None
+    outside_noise_desc:    Optional[str]   = None
+    outside_noise_impact:  Optional[str]   = None
+    
 class EnvironmentState(BaseModel):
     timestamp: datetime
     room: str
