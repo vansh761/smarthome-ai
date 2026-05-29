@@ -359,14 +359,7 @@ export default function Dashboard() {
                     <YAxis domain={[0,100]} tick={{ fontSize: 10, fill: "#9CA3AF" }}/>
                     <Tooltip
                       contentStyle={{ background: "#1F2937", border: "1px solid #374151", borderRadius: "8px", fontSize: "12px" }}
-                      <Tooltip
-                        contentStyle={{
-                          background: "#1F2937",
-                          border: "1px solid #374151",
-                        }}
-                        formatter={(v) => [`${v ?? 0}`, "Comfort"]}
-                        labelFormatter={(l) => new Date(l).toLocaleTimeString()}
-                      />
+                      formatter={(v: number) => [`${v}`, "Comfort"]}
                       labelFormatter={(l) => new Date(l).toLocaleTimeString()}/>
                     <Line type="monotone" dataKey="comfort_score" stroke="#60A5FA" strokeWidth={2} dot={false}/>
                   </LineChart>
