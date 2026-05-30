@@ -35,6 +35,16 @@ def search_place(name: str):
     """
     return geocode_place(name)
 
+@router.get("/by-coordinates")
+def weather_by_exact_coordinates(lat: float, lon: float, name: str = ""):
+    """
+    Get weather for exact coordinates.
+    Use this after searching to pick the correct location from alternatives.
+    """
+    weather = get_weather(lat, lon)
+    if name:
+        weather["location"] = {"name": name, "lat": lat, "lon": lon}
+    return weather
 
 @router.get("/sleep-conditions")
 def sleep_conditions(name: str):
