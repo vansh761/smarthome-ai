@@ -88,6 +88,202 @@ function StatCard({ icon, label, value, unit, active }: {
   );
 }
 
+function SmartEnergyCalculator({ apiBase }: { apiBase: string }) {
+  const [categories, setCategories] = useState<any>(null);
+  const [selectedDevices, setSelectedDevices] = useState<any[]>([]);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [rate, setRate] = useState(6.0);
+
+  useEffect(() => {
+    fetch(`${apiBase}/smart-devices/categories`)
+      .then(r => r.json())
+      .then(setCategories);
+  }, [apiBase]);
+
+  const addDevice = (catKey: string, devKey: string, dev: any) => {
+    setSelectedDevices(prev => [...prev, {
+      category:   catKey,
+      device_key: devKey,
+      label:      dev.label,
+      watts:      dev.watts,
+      ask:        dev.ask,
+      options:    dev.options,
+      quantity:   1,
+      hours:      8,
+      option:     dev.options ? Object.keys(dev.options)[0] : null,
+      is_on:      true,
+    }]);
+  };
+
+  const removeDevice = (idx: number) => {
+    setSelectedDevices(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const calculate = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/smart-devices/calculate-bill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          devices: selectedDevices.map(d => ({
+            category:   d.category,
+            device_key: d.device_key,
+            quantity:   d.quantity,
+            hours:      d.hours,
+            option:     d.option,
+            is_on:      d.is_on,
+          })),
+          electricity_rate: rate,
+        }),
+      });
+      setResult(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-sm text-gray-400">Rate: ₹</span>
+        <input type="number" value={rate} onChange={e => setRate(Number(e.target.value))}
+          className="w-20 bg-gray-800 rounded px-2 py-1 text-sm text-white" step={0.5}/>
+        <span className="text-sm text-gray-400">/unit</span>
+      </div>
+
+      {/* Category selector */}
+      {categories && (
+        <div className="mb-4">
+          <p className="text-sm text-gray-400 mb-2">Add devices to your home:</p>
+          <div className="space-y-2">
+            {Object.entries(categories).map(([catKey, cat]: [string, any]) => (
+              <details key={catKey} className="bg-gray-800/60 border border-gray-700/40 rounded-xl">
+                <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-300">
+                  {cat.label}
+                </summary>
+                <div className="px-4 pb-3 flex flex-wrap gap-2">
+                  {Object.entries(cat.devices).map(([devKey, dev]: [string, any]) => (
+                    <button key={devKey}
+                      onClick={() => addDevice(catKey, devKey, dev)}
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-blue-700 text-xs rounded-lg text-gray-300 transition-colors">
+                      + {dev.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Selected devices */}
+      {selectedDevices.length > 0 && (
+        <div className="mb-4">
+          <p className="text-sm text-gray-400 mb-2">Your devices:</p>
+          <div className="space-y-2">
+            {selectedDevices.map((d, idx) => (
+              <div key={idx} className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-white flex-1">{d.label}</span>
+                  {d.ask === "tons" && d.options && (
+                    <select value={d.option || ""}
+                      onChange={e => {
+                        const u = [...selectedDevices];
+                        u[idx] = { ...d, option: e.target.value };
+                        setSelectedDevices(u);
+                      }}
+                      className="bg-gray-700 text-white text-xs rounded px-2 py-1">
+                      {Object.keys(d.options).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  )}
+                  {d.ask === "wattage" && d.options && (
+                    <select value={d.option || ""}
+                      onChange={e => {
+                        const u = [...selectedDevices];
+                        u[idx] = { ...d, option: e.target.value };
+                        setSelectedDevices(u);
+                      }}
+                      className="bg-gray-700 text-white text-xs rounded px-2 py-1">
+                      {Object.keys(d.options).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">Qty:</span>
+                    <input type="number" value={d.quantity} min={1} max={20}
+                      onChange={e => {
+                        const u = [...selectedDevices];
+                        u[idx] = { ...d, quantity: Number(e.target.value) };
+                        setSelectedDevices(u);
+                      }}
+                      className="w-12 bg-gray-700 rounded px-2 py-1 text-xs text-white"/>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">Hrs:</span>
+                    <input type="number" value={d.hours} min={0} max={24} step={0.5}
+                      onChange={e => {
+                        const u = [...selectedDevices];
+                        u[idx] = { ...d, hours: Number(e.target.value) };
+                        setSelectedDevices(u);
+                      }}
+                      className="w-16 bg-gray-700 rounded px-2 py-1 text-xs text-white"/>
+                  </div>
+                  <button onClick={() => removeDevice(idx)}
+                    className="text-red-400 hover:text-red-300 text-xs px-2">✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={calculate} disabled={loading}
+            className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-medium">
+            {loading ? "Calculating..." : "Calculate My Bill"}
+          </button>
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-4 text-center">
+              <p className="text-xs text-gray-400">Current Monthly Bill</p>
+              <p className="text-3xl font-bold text-red-400">₹{result.monthly_bill}</p>
+            </div>
+            <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 text-center">
+              <p className="text-xs text-gray-400">After AI Suggestions</p>
+              <p className="text-3xl font-bold text-green-400">₹{result.optimized_bill}</p>
+            </div>
+          </div>
+
+          {result.suggestions?.length > 0 && (
+            <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl p-4">
+              <p className="text-sm font-medium mb-2 text-yellow-300">AI Suggestions — Save ₹{result.monthly_saving}/month</p>
+              {result.suggestions.map((s: any, i: number) => (
+                <div key={i} className="text-sm mb-1">
+                  <span className="text-white">{s.device}:</span>
+                  <span className="text-gray-300"> {s.suggestion}</span>
+                  <span className="text-green-400"> (save ₹{s.saving}/day)</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+            <p className="text-sm font-medium mb-2">Breakdown (highest cost first)</p>
+            {result.breakdown?.map((d: any, i: number) => (
+              <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-700/30 last:border-0">
+                <span className="text-gray-300">{d.device}</span>
+                <span className="text-gray-400">{d.hours}h → <span className="text-white font-medium">₹{d.cost}/day</span></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [snapshot,      setSnapshot]      = useState<Record<string, RoomState>>({});
   const [selectedRoom,  setSelectedRoom]  = useState("bedroom");
@@ -656,10 +852,21 @@ export default function Dashboard() {
           {weatherResult && !weatherResult.error && (
             <div className="space-y-3">
               <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
-                <h3 className="font-medium text-white mb-1">
-                  {weatherResult.location?.name}, {weatherResult.location?.state}
-                </h3>
-                <p className="text-xs text-gray-400 mb-3">{weatherResult.outdoor?.condition}</p>
+                {weatherResult.other_matches && weatherResult.other_matches.length > 0 && (
+                <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700/30 rounded-lg">
+                  <p className="text-xs text-yellow-400 mb-1">Other matching locations:</p>
+                  {weatherResult.other_matches.map((m: any, i: number) => (
+                    <button key={i}
+                      onClick={async () => {
+                        const res = await fetch(`${API_BASE}/weather/by-coordinates?lat=${m.lat}&lon=${m.lon}&name=${encodeURIComponent(m.name)}`);
+                        setWeatherResult(await res.json());
+                      }}
+                      className="block text-xs text-blue-400 hover:text-blue-300 py-0.5">
+                      → {m.name}
+                    </button>
+                  ))}
+                </div>
+              )}
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <p className="text-gray-400">Outdoor: <span className="text-white">{weatherResult.outdoor?.temperature_c}°C</span></p>
                   <p className="text-gray-400">Feels: <span className="text-white">{weatherResult.outdoor?.feels_like_c}°C</span></p>
@@ -712,35 +919,15 @@ export default function Dashboard() {
       )}
 
       {/* ── ENERGY TAB ────────────────────────────────────────────────────── */}
+      {/* ── ENERGY TAB ────────────────────────────────────────────────────── */}
       {activeTab === "energy" && (
         <div>
-          <h2 className="text-lg font-semibold mb-2">Energy & API Reference</h2>
-          <p className="text-sm text-gray-400 mb-4">All system endpoints available for testing.</p>
-          <div className="space-y-2">
-            {[
-              {method:"GET",  path:"/environment/snapshot",   desc:"Live sensor data all rooms"},
-              {method:"POST", path:"/energy/predict/monthly", desc:"Monthly electricity bill prediction"},
-              {method:"POST", path:"/sleep/predict",          desc:"Sleep quality score"},
-              {method:"POST", path:"/emotion/analyze",        desc:"Emotion detection 23 languages"},
-              {method:"POST", path:"/memory/analyze-and-remember", desc:"Emotion with memory"},
-              {method:"POST", path:"/memory/predict",         desc:"Pattern-based prediction"},
-              {method:"GET",  path:"/weather/place?name=Delhi", desc:"Real weather any location"},
-              {method:"POST", path:"/device-timer/simulate",  desc:"Device timer bill calculator"},
-              {method:"GET",  path:"/transparency/principles", desc:"Ethical AI principles"},
-              {method:"GET",  path:"/evaluation/benchmark",   desc:"System benchmark"},
-              {method:"GET",  path:"/mqtt/status",            desc:"MQTT hardware bridge status"},
-              {method:"GET",  path:"/automation/modes",       desc:"Manual/Assisted/Full AI modes"},
-            ].map((ep, i) => (
-              <a key={i} href={`${API_BASE}${ep.path}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 bg-gray-800/60 border border-gray-700/40 rounded-xl p-3 hover:border-gray-500/60 transition-colors">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                  ep.method === "GET" ? "bg-green-900/60 text-green-400" : "bg-blue-900/60 text-blue-400"
-                }`}>{ep.method}</span>
-                <span className="text-sm text-gray-300 font-mono flex-1">{ep.path}</span>
-                <span className="text-xs text-gray-500 hidden md:block">{ep.desc}</span>
-              </a>
-            ))}
-          </div>
+          <h2 className="text-lg font-semibold mb-2">Smart Energy Calculator</h2>
+          <p className="text-sm text-gray-400 mb-4">
+            Select your devices — no need to know watts. System calculates bill automatically.
+          </p>
+
+          <SmartEnergyCalculator apiBase={API_BASE} />
         </div>
       )}
 
