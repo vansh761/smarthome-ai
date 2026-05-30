@@ -124,6 +124,33 @@ def simulate_room(room: str) -> EnvironmentState:
     else:
         temp_score = max(10, 46 - (temp_diff - 10) * 3)
 
+    # Generate comfort improvement suggestions
+    comfort_suggestions = []
+    if temperature > 26:
+        comfort_suggestions.append({
+            "action":   "Turn on AC",
+            "impact":   "high",
+            "expected_score_gain": min(30, round((temperature - 24) * 3)),
+        })
+    elif temperature > 24:
+        comfort_suggestions.append({
+            "action":   "Turn on fan",
+            "impact":   "medium",
+            "expected_score_gain": 10,
+        })
+    if noise > 50:
+        comfort_suggestions.append({
+            "action":   "Close windows",
+            "impact":   "medium",
+            "expected_score_gain": 15,
+        })
+    if outside_db > 70:
+        comfort_suggestions.append({
+            "action":   "Close all windows — high outside noise",
+            "impact":   "high",
+            "expected_score_gain": 20,
+        })
+        
     # Noise: optimal below 35dB
     noise_diff = max(0, noise - 35)
     noise_score = max(20, 100 - noise_diff * 2.5)
