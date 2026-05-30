@@ -198,6 +198,7 @@ def simulate_room(room: str) -> EnvironmentState:
         outside_noise_db     = outside_db,
         outside_noise_desc   = sound_data["description"],
         outside_noise_impact = noise_impact,
+        comfort_suggestions  = comfort_suggestions
     )
 
 def simulate_all_rooms() -> dict:
