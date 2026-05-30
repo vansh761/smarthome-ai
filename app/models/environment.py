@@ -28,7 +28,8 @@ class EnvironmentState(BaseModel):
 
     # Comfort
     comfort_score:         Optional[float] = None
-
+    comfort_suggestions:   Optional[list] = None
+    
     # Outside noise — new
     outside_noise_source:  Optional[str]   = None
     outside_noise_db:      Optional[float] = None
