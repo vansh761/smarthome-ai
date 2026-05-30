@@ -12,7 +12,7 @@ def geocode_place(place_name: str, country: str = "IN") -> dict:
     url    = "https://geocoding-api.open-meteo.com/v1/search"
     params = {
         "name":     place_name,
-        "count":    5,
+        "count":    10,
         "language": "en",
         "format":   "json",
     }
@@ -196,49 +196,44 @@ def get_weather(lat: float, lon: float, timezone: str = "Asia/Kolkata") -> dict:
 
 
 def get_weather_by_place(place_name: str) -> dict:
-    """
-    Get weather for ANY place — city, district, village, colony, landmark.
-    Examples:
-      "Lajpat Nagar, Delhi"
-      "Koramangala, Bangalore"
-      "Sector 17, Chandigarh"
-      "Dharavi, Mumbai"
-      "Rampur village, Himachal Pradesh"
-    """
     geo = geocode_place(place_name)
 
     if not geo.get("found"):
         return {
             "error":        geo.get("error"),
             "search_query": place_name,
-            "tip":          geo.get("tip", "Try a more specific name"),
+            "tip":          geo.get("tip", "Try adding state or country. Example: 'Ambala Cantt, Haryana'"),
         }
 
-    best      = geo["best_match"]
-    weather   = get_weather(best["lat"], best["lon"], best.get("timezone","Asia/Kolkata"))
+    best    = geo["best_match"]
+    weather = get_weather(best["lat"], best["lon"], best.get("timezone", "Asia/Kolkata"))
 
     if "error" in weather:
         return weather
 
     weather["location"] = {
-        "name":       best["name"],
-        "state":      best["state"],
-        "district":   best["district"],
-        "country":    best["country"],
-        "lat":        best["lat"],
-        "lon":        best["lon"],
-        "elevation_m":best["elevation"],
+        "name":        best["name"],
+        "state":       best["state"],
+        "district":    best["district"],
+        "country":     best["country"],
+        "lat":         best["lat"],
+        "lon":         best["lon"],
+        "elevation_m": best["elevation"],
         "search_query":place_name,
     }
 
+    # Show all alternatives so user can pick the right one
     if geo["alternatives"]:
-        weather["did_you_mean"] = [
-            f"{r['name']}, {r['state']}, {r['country']}"
+        weather["other_matches"] = [
+            {
+                "name":    f"{r['name']}, {r['state']}, {r['country']}",
+                "lat":     r["lat"],
+                "lon":     r["lon"],
+            }
             for r in geo["alternatives"]
         ]
 
     return weather
-
 
 def wind_direction_label(degrees: float) -> str:
     directions = ["N","NE","E","SE","S","SW","W","NW"]
