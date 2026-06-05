@@ -812,6 +812,155 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── CHAT TAB ─────────────────────────────────────────────────────── */}
+      {activeTab === "chat" && (
+        <div className="flex flex-col h-[70vh]">
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-lg font-semibold">Talk to your Smart Home</h2>
+            <select
+              value={chatLanguage}
+              onChange={e => setChatLanguage(e.target.value)}
+              className="ml-auto bg-gray-800 text-white text-sm rounded-lg px-3 py-2 border border-gray-700">
+              {["Hindi","Hinglish","English","Tamil","Telugu","Bengali",
+                "Marathi","Gujarati","Kannada","Malayalam","Punjabi"].map(l => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
+            {chatMessages.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-4xl mb-3">💬</p>
+                <p className="text-gray-400 text-sm">
+                  Talk to your smart home in {chatLanguage}.
+                </p>
+                <p className="text-gray-500 text-xs mt-2">
+                  Ask about your room, energy tips, sleep advice, or just chat.
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center mt-4">
+                  {[
+                    "Mera room kaisa hai?",
+                    "Sleep tips do",
+                    "Bijli bill kaise kam karo",
+                    "Main thak gaya hoon",
+                    "Aaj ka mausam kaisa hai",
+                  ].map(suggestion => (
+                    <button key={suggestion}
+                      onClick={() => setChatInput(suggestion)}
+                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-full text-xs text-gray-300">
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-xs md:max-w-md rounded-2xl px-4 py-3 text-sm ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white rounded-br-sm"
+                    : "bg-gray-800 text-gray-100 rounded-bl-sm"
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+
+            {chatLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-3">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"/>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:"0.1s"}}/>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:"0.2s"}}/>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="flex gap-2">
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={async e => {
+                if (e.key === "Enter" && chatInput.trim() && !chatLoading) {
+                  const userMsg = { role: "user", content: chatInput };
+                  const newMessages = [...chatMessages, userMsg];
+                  setChatMessages(newMessages);
+                  setChatInput("");
+                  setChatLoading(true);
+                  try {
+                    const currentRoom = snapshot[selectedRoom];
+                    const res  = await fetch(`${API_BASE}/chat/message`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        messages:        newMessages,
+                        language:        chatLanguage,
+                        user_emotion:    emotionResult?.detected_emotion,
+                        room_conditions: currentRoom ? {
+                          temperature: currentRoom.temperature_c,
+                          noise:       currentRoom.noise_db,
+                          comfort:     currentRoom.comfort_score,
+                        } : null,
+                        user_id: "dashboard_user",
+                      }),
+                    });
+                    const data = await res.json();
+                    setChatMessages([...newMessages, { role: "assistant", content: data.reply }]);
+                  } finally {
+                    setChatLoading(false);
+                  }
+                }
+              }}
+              placeholder={`Type in ${chatLanguage}... (Press Enter to send)`}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm"
+            />
+            <button
+              onClick={async () => {
+                if (!chatInput.trim() || chatLoading) return;
+                const userMsg    = { role: "user", content: chatInput };
+                const newMessages= [...chatMessages, userMsg];
+                setChatMessages(newMessages);
+                setChatInput("");
+                setChatLoading(true);
+                try {
+                  const currentRoom = snapshot[selectedRoom];
+                  const res  = await fetch(`${API_BASE}/chat/message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      messages:        newMessages,
+                      language:        chatLanguage,
+                      user_emotion:    emotionResult?.detected_emotion,
+                      room_conditions: currentRoom ? {
+                        temperature: currentRoom.temperature_c,
+                        noise:       currentRoom.noise_db,
+                        comfort:     currentRoom.comfort_score,
+                      } : null,
+                      user_id: "dashboard_user",
+                    }),
+                  });
+                  const data = await res.json();
+                  setChatMessages([...newMessages, { role: "assistant", content: data.reply }]);
+                } finally {
+                  setChatLoading(false);
+                }
+              }}
+              disabled={chatLoading || !chatInput.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-3 rounded-xl text-sm font-medium">
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+      
+
       {/* ── DEVICE TIMER TAB ─────────────────────────────────────────────── */}
       {activeTab === "devices" && (
         <div>
