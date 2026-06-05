@@ -520,6 +520,10 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(true);
   const [lastUpdated,   setLastUpdated]   = useState("");
   const [activeTab,     setActiveTab]     = useState<"environment"|"devices"|"health"|"emotion"|"sleep"|"energy">("environment");
+  const [chatMessages,  setChatMessages]  = useState<{role:string, content:string}[]>([]);
+  const [chatInput,     setChatInput]     = useState("");
+  const [chatLanguage,  setChatLanguage]  = useState("Hindi");
+  const [chatLoading,   setChatLoading]   = useState(false);
 
   // Device timer state
   const [timerDevices,  setTimerDevices]  = useState<TimerDevice[]>([
@@ -630,8 +634,9 @@ export default function Dashboard() {
     { id: "devices",     label: "⚡ Device Timer" },
     { id: "health",      label: "❤️ Health" },
     { id: "emotion",     label: "😊 Emotion" },
-    { id: "sleep",       label: "🌙 Sleep" },
+    { id: "sleep",       label: "🌙 Sleep & Weather" },
     { id: "energy",      label: "💡 Weather" },
+    { id: "chat",        label: "💬 Talk to AI" },
   ];
 
   return (
