@@ -284,6 +284,111 @@ function SmartEnergyCalculator({ apiBase }: { apiBase: string }) {
   );
 }
 
+function MicrophoneMonitor({ onNoiseUpdate }: { onNoiseUpdate?: (db: number) => void }) {
+  const [isListening, setIsListening]   = useState(false);
+  const [noiseLevel,  setNoiseLevel]    = useState<number | null>(null);
+  const [noiseLabel,  setNoiseLabel]    = useState("");
+  const [error,       setError]         = useState("");
+  const analyserRef   = useRef<AnalyserNode | null>(null);
+  const streamRef     = useRef<MediaStream | null>(null);
+  const intervalRef   = useRef<NodeJS.Timeout | null>(null);
+
+  const startListening = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const ctx      = new AudioContext();
+      const source   = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      setIsListening(true);
+      setError("");
+
+      intervalRef.current = setInterval(() => {
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const avg    = data.reduce((a, b) => a + b, 0) / data.length;
+        const db     = Math.round(avg * 0.6 + 20);
+        setNoiseLevel(db);
+        onNoiseUpdate?.(db);
+
+        if (db < 30)       setNoiseLabel("Quiet");
+        else if (db < 50)  setNoiseLabel("Normal");
+        else if (db < 65)  setNoiseLabel("Moderate");
+        else if (db < 80)  setNoiseLabel("Loud");
+        else               setNoiseLabel("Very Loud");
+      }, 500);
+    } catch (e) {
+      setError("Microphone access denied. Please allow microphone in browser settings.");
+    }
+  };
+
+  const stopListening = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsListening(false);
+    setNoiseLevel(null);
+    setNoiseLabel("");
+  };
+
+  useEffect(() => () => stopListening(), []);
+
+  return (
+    <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Volume2 size={16} className="text-blue-400"/>
+          <span className="text-sm font-medium text-gray-300">Live Microphone Monitor</span>
+        </div>
+        <button
+          onClick={isListening ? stopListening : startListening}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            isListening
+              ? "bg-red-600 hover:bg-red-700 text-white"
+              : "bg-green-600 hover:bg-green-700 text-white"
+          }`}>
+          {isListening ? "Stop" : "Start Mic"}
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {isListening && noiseLevel !== null && (
+        <div className="flex items-center gap-4">
+          <div>
+            <p className={`text-3xl font-bold ${
+              noiseLevel > 65 ? "text-red-400" :
+              noiseLevel > 45 ? "text-yellow-400" : "text-green-400"
+            }`}>{noiseLevel} dB</p>
+            <p className="text-xs text-gray-400">{noiseLabel}</p>
+          </div>
+          <div className="flex-1">
+            <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  noiseLevel > 65 ? "bg-red-500" :
+                  noiseLevel > 45 ? "bg-yellow-500" : "bg-green-500"
+                }`}
+                style={{ width: `${Math.min(100, noiseLevel)}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Live from laptop microphone</p>
+          </div>
+        </div>
+      )}
+
+      {!isListening && (
+        <p className="text-xs text-gray-500">
+          Click Start Mic to measure real noise level from your laptop microphone.
+          Works on Chrome and Edge with HTTPS.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [snapshot,      setSnapshot]      = useState<Record<string, RoomState>>({});
   const [selectedRoom,  setSelectedRoom]  = useState("bedroom");
