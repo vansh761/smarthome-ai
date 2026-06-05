@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { fetchSnapshot, fetchRoomHistory } from "@/lib/api";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -389,6 +389,130 @@ function MicrophoneMonitor({ onNoiseUpdate }: { onNoiseUpdate?: (db: number) => 
   );
 }
 
+function LightSensor() {
+  const [lightLevel, setLightLevel] = useState<number | null>(null);
+  const [supported,  setSupported]  = useState<boolean | null>(null);
+  const [manual,     setManual]     = useState(50);
+
+  useEffect(() => {
+    if ("AmbientLightSensor" in window) {
+      try {
+        const sensor = new (window as any).AmbientLightSensor();
+        sensor.addEventListener("reading", () => {
+          const lux   = sensor.illuminance;
+          const level = Math.min(100, Math.round((lux / 1000) * 100));
+          setLightLevel(level);
+        });
+        sensor.addEventListener("error", () => setSupported(false));
+        sensor.start();
+        setSupported(true);
+      } catch {
+        setSupported(false);
+      }
+    } else {
+      setSupported(false);
+    }
+  }, []);
+
+  return (
+    <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Sun size={16} className="text-yellow-400"/>
+        <span className="text-sm font-medium text-gray-300">
+          Light Level
+          {supported === true && <span className="ml-2 text-xs text-green-400">● Live from screen sensor</span>}
+          {supported === false && <span className="ml-2 text-xs text-gray-500">● Manual (sensor not available on this device)</span>}
+        </span>
+      </div>
+
+      {supported === true && lightLevel !== null ? (
+        <div>
+          <p className="text-3xl font-bold text-yellow-400">{lightLevel}%</p>
+          <p className="text-xs text-gray-400 mt-1">Ambient light from laptop sensor</p>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center gap-3">
+            <input type="range" min={0} max={100} value={manual}
+              onChange={e => setManual(Number(e.target.value))}
+              className="flex-1 accent-yellow-400"/>
+            <span className="text-lg font-bold text-yellow-400 min-w-12">{manual}%</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {supported === false
+              ? "Ambient light sensor not available on this device/browser. Adjust manually."
+              : "Loading sensor..."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MusicTagger({ onMusicUpdate }: { onMusicUpdate?: (music: string) => void }) {
+  const [currentMusic, setCurrentMusic] = useState("");
+  const [saved,        setSaved]        = useState(false);
+
+  const MUSIC_PRESETS = [
+    "lo-fi / calm instrumental",
+    "upbeat / energetic",
+    "classical",
+    "Bollywood",
+    "devotional / bhajans",
+    "jazz",
+    "hip-hop",
+    "silence / no music",
+    "podcast / talk",
+    "news",
+  ];
+
+  const save = (music: string) => {
+    setCurrentMusic(music);
+    onMusicUpdate?.(music);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Music size={16} className="text-purple-400"/>
+        <span className="text-sm font-medium text-gray-300">What are you playing?</span>
+        {saved && <span className="text-xs text-green-400 ml-auto">Saved ✓</span>}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Browser privacy prevents detecting audio from YouTube or other apps.
+        Tag it manually so the system can factor it into your emotion environment.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {MUSIC_PRESETS.map(m => (
+          <button key={m}
+            onClick={() => save(m)}
+            className={`px-3 py-1.5 rounded-full text-xs transition-colors ${
+              currentMusic === m
+                ? "bg-purple-600 text-white"
+                : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+            }`}>
+            {m}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={currentMusic}
+          onChange={e => setCurrentMusic(e.target.value)}
+          placeholder="Or type custom: artist - song name"
+          className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+        />
+        <button onClick={() => save(currentMusic)}
+          className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm">
+          Tag
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [snapshot,      setSnapshot]      = useState<Record<string, RoomState>>({});
   const [selectedRoom,  setSelectedRoom]  = useState("bedroom");
@@ -616,6 +740,21 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+
+              {/* Live microphone */}
+              <div className="mb-4">
+                <MicrophoneMonitor />
+              </div>
+
+              {/* Light sensor */}
+              <div className="mb-4">
+                <LightSensor />
+              </div>
+
+              {/* Music tagger */}
+              <div className="mb-4">
+                <MusicTagger />
+              </div>
 
               {/* Stats */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
