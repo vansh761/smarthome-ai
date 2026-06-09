@@ -39,10 +39,8 @@ SOUND_BY_TIME = {
 }
 
 def get_current_weather(city: str = "delhi") -> dict:
-    from datetime import datetime, timedelta
-
+    from datetime import datetime
     now = datetime.now()
-
     if (
         _weather_cache["data"] is not None and
         _weather_cache["city"] == city and
@@ -50,15 +48,15 @@ def get_current_weather(city: str = "delhi") -> dict:
         (now - _weather_cache["timestamp"]).seconds < 600
     ):
         return _weather_cache["data"]
-
-    weather = get_weather_by_place(city)
-
-    if "error" not in weather:
-        _weather_cache["data"] = weather
-        _weather_cache["timestamp"] = now
-        _weather_cache["city"] = city
-
-    return weather
+    try:
+        weather = get_weather_by_place(city)
+        if "error" not in weather:
+            _weather_cache["data"]      = weather
+            _weather_cache["timestamp"] = now
+            _weather_cache["city"]      = city
+        return weather
+    except Exception:
+        return {"error": "weather unavailable"}
 
 def get_time_of_day() -> str:
     hour = datetime.now().hour
@@ -76,16 +74,22 @@ def simulate_room(room: str) -> EnvironmentState:
     
     time_of_day = get_time_of_day()
     
-    # Try to use real weather data
-    weather = get_current_weather("delhi")  # change city as needed
-    if "error" not in weather and "indoor_estimate" in weather:
-        temperature = weather["indoor_estimate"]["temperature_c"] + random.uniform(-0.5, 0.5)
-        real_humidity = weather["indoor_estimate"]["humidity_percent"]
-    else:
-        base_temp   = {"morning": 22, "afternoon": 28, "evening": 25, "night": 21}
-        temperature = base_temp[time_of_day] + random.uniform(-1.5, 1.5)
+    # Try real weather, fall back to simulated if anything fails
+    try:
+        weather      = get_current_weather("delhi")
+        indoor       = weather.get("indoor_estimate", {})
+        temperature  = indoor.get("temperature_c") or (
+            {"morning":22,"afternoon":28,"evening":25,"night":21}[get_time_of_day()]
+            + random.uniform(-1.5, 1.5)
+        )
+        real_humidity = indoor.get("humidity_percent")
+    except Exception:
+        temperature   = (
+            {"morning":22,"afternoon":28,"evening":25,"night":21}[get_time_of_day()]
+            + random.uniform(-1.5, 1.5)
+        )
         real_humidity = None
-    
+        
     # Noise varies by room and time
     noise_base = {
         "bedroom": 30, "living_room": 45,
