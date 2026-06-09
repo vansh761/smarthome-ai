@@ -12,6 +12,21 @@ import {
   AlertTriangle, CheckCircle, Clock
 } from "lucide-react";
 
+function saveToStorage(key: string, value: any) {
+  try {
+    localStorage.setItem(`smarthome_${key}`, JSON.stringify(value));
+  } catch {}
+}
+
+function loadFromStorage<T>(key: string, defaultValue: T): T {
+  try {
+    const item = localStorage.getItem(`smarthome_${key}`);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface RoomState {
@@ -515,14 +530,20 @@ function MusicTagger({ onMusicUpdate }: { onMusicUpdate?: (music: string) => voi
 
 export default function Dashboard() {
   const [snapshot,      setSnapshot]      = useState<Record<string, RoomState>>({});
-  const [selectedRoom,  setSelectedRoom]  = useState("bedroom");
+  const [selectedRoom,  setSelectedRoom]  = useState<string>(
+    () => loadFromStorage("selectedRoom", "bedroom")
+  );
   const [history,       setHistory]       = useState<HistoryEntry[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [lastUpdated,   setLastUpdated]   = useState("");
   const [activeTab,     setActiveTab]     = useState<"environment"|"devices"|"health"|"emotion"|"sleep"|"energy">("environment");
-  const [chatMessages,  setChatMessages]  = useState<{role:string, content:string}[]>([]);
+  const [chatMessages,  setChatMessages]  = useState<{role:string,content:string}[]>(
+    () => loadFromStorage("chatMessages", [])
+  );
   const [chatInput,     setChatInput]     = useState("");
-  const [chatLanguage,  setChatLanguage]  = useState("Hindi");
+  const [chatLanguage,  setChatLanguage]  = useState<string>(
+    () => loadFromStorage("chatLanguage", "Hindi")
+  );
   const [chatLoading,   setChatLoading]   = useState(false);
 
   // Device timer state
@@ -536,11 +557,12 @@ export default function Dashboard() {
   const [timerLoading,  setTimerLoading]  = useState(false);
 
   // Health state
-  const [healthForm,    setHealthForm]    = useState({
-    temperature_c: 26, noise_db: 40, light_level: 20,
-    sleep_hour: 23, wake_hour: 7,
-    health_conditions: [] as string[],
-  });
+  const [healthForm,    setHealthForm]    = useState(
+    () => loadFromStorage("healthForm", {
+      temperature_c: 26, noise_db: 40, light_level: 20,
+      sleep_hour: 23, wake_hour: 7, health_conditions: [] as string[],
+    })
+  );
   const [healthResult,  setHealthResult]  = useState<any>(null);
 
   // Emotion state
@@ -549,7 +571,9 @@ export default function Dashboard() {
   const [emotionLoading,setEmotionLoading]= useState(false);
 
   // Weather state
-  const [weatherPlace,  setWeatherPlace]  = useState("Delhi");
+  const [weatherPlace,  setWeatherPlace]  = useState<string>(
+    () => loadFromStorage("weatherPlace", "Delhi")
+  );
   const [weatherResult, setWeatherResult] = useState<any>(null);
 
   const refresh = useCallback(async () => {
@@ -629,6 +653,12 @@ export default function Dashboard() {
 
   const room = snapshot[selectedRoom];
 
+  useEffect(() => saveToStorage("chatMessages",  chatMessages),  [chatMessages]);
+  useEffect(() => saveToStorage("chatLanguage",  chatLanguage),  [chatLanguage]);
+  useEffect(() => saveToStorage("healthForm",    healthForm),    [healthForm]);
+  useEffect(() => saveToStorage("weatherPlace",  weatherPlace),  [weatherPlace]);
+  useEffect(() => saveToStorage("selectedRoom",  selectedRoom),  [selectedRoom]);
+  
   const tabs = [
     { id: "environment", label: "🏠 Environment" },
     { id: "devices",     label: "⚡ Device Timer" },
@@ -1234,18 +1264,45 @@ export default function Dashboard() {
       {activeTab === "sleep" && (
         <div>
           <h2 className="text-lg font-semibold mb-4">Sleep & Weather Conditions</h2>
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-2">
             <input
               value={weatherPlace}
               onChange={e => setWeatherPlace(e.target.value)}
-              placeholder="Enter city, district, village, colony..."
+              onKeyDown={e => e.key === "Enter" && getWeather()}
+              placeholder="City, village, colony, district..."
               className="flex-1 bg-gray-800 rounded-xl px-4 py-3 text-white text-sm"
             />
             <button onClick={getWeather}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-xl text-sm font-medium">
-              Get Weather
+              Search
+            </button>
+            <button
+              onClick={() => {
+                if (!navigator.geolocation) {
+                  alert("GPS not available on this device/browser");
+                  return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                  async (pos) => {
+                    const res  = await fetch(
+                      `${API_BASE}/weather/gps?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`
+                    );
+                    const data = await res.json();
+                    setWeatherResult(data);
+                  },
+                  () => alert("GPS access denied. Please allow location access."),
+                  { timeout: 10000 }
+                );
+              }}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl text-sm"
+              title="Use my current location">
+              📍 GPS
             </button>
           </div>
+          <p className="text-xs text-gray-500 mb-4">
+            Works for any city, village, colony, cantonment, district worldwide.
+            Example: "Ambala Cantt", "Koramangala Bangalore", "Dharavi Mumbai"
+          </p>
 
           {weatherResult && !weatherResult.error && (
             <div className="space-y-3">
