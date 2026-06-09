@@ -1184,17 +1184,25 @@ export default function Dashboard() {
               </div>
 
               {healthResult.health_tips?.length > 0 && (
-                <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4">
-                  <h3 className="text-sm font-medium mb-2 text-blue-300">Health-Specific Tips</h3>
-                  {healthResult.health_tips.map((tip: any, i: number) => (
-                    <div key={i} className="mb-2 p-2 bg-gray-800/40 rounded-lg">
-                      <p className="text-xs font-medium text-white">{tip.condition}</p>
-                      <p className="text-xs text-gray-400">{tip.tip}</p>
-                      <p className="text-xs text-blue-400">Suggested temp: {tip.suggested_temp}°C</p>
+                    <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4">
+                      <h3 className="text-sm font-medium mb-2 text-blue-300">Health Tips & घरेलू उपाय</h3>
+                      {healthResult.health_tips.map((tip: any, i: number) => (
+                        <div key={i} className="mb-3 p-3 bg-gray-800/40 rounded-lg">
+                          <p className="text-xs font-medium text-white mb-1">{tip.condition}</p>
+                          <p className="text-xs text-gray-400 mb-2">{tip.tip}</p>
+                          <p className="text-xs text-blue-400 mb-1">Suggested: {tip.suggested_temp}°C</p>
+                          {tip.gharelu_upay?.length > 0 && (
+                            <div className="mt-2 p-2 bg-green-900/20 rounded border border-green-700/30">
+                              <p className="text-xs font-medium text-green-400 mb-1">🌿 घरेलू उपाय:</p>
+                              {tip.gharelu_upay.map((upay: string, j: number) => (
+                                <p key={j} className="text-xs text-gray-300">• {upay}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )}
 
               <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
                 <h3 className="text-sm font-medium mb-2">Ideal Environment Tonight</h3>
