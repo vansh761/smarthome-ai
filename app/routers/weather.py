@@ -81,3 +81,48 @@ def sleep_conditions(name: str):
             f"Sleep score: {sleep['sleep_score']}/100 ({sleep['quality']})"
         ),
     }
+
+@router.get("/gps")
+def weather_by_gps(lat: float, lon: float):
+    """
+    Get weather for exact GPS coordinates from device location API.
+    Frontend calls browser geolocation and passes coordinates here.
+    """
+    from app.hardware.weather import get_weather, geocode_place
+    import requests
+
+    # Reverse geocode to get place name
+    try:
+        url    = "https://geocoding-api.open-meteo.com/v1/search"
+        # Use Open-Meteo's reverse geocoding via nearest search
+        weather = get_weather(lat, lon)
+        weather["location"] = {
+            "lat": lat,
+            "lon": lon,
+            "name": f"GPS Location ({lat:.4f}, {lon:.4f})",
+            "note": "Detected from device GPS",
+        }
+        # Try to get place name from coordinates using nominatim
+        try:
+            nom = requests.get(
+                f"https://nominatim.openstreetmap.org/reverse",
+                params={"lat":lat,"lon":lon,"format":"json"},
+                headers={"User-Agent":"SmartHomeAI/1.0"},
+                timeout=5,
+            ).json()
+            addr = nom.get("address", {})
+            name = (addr.get("suburb") or addr.get("neighbourhood") or
+                    addr.get("town") or addr.get("city") or
+                    addr.get("village") or addr.get("county") or "")
+            state = addr.get("state", "")
+            country = addr.get("country", "")
+            if name:
+                weather["location"]["name"]    = name
+                weather["location"]["state"]   = state
+                weather["location"]["country"] = country
+                weather["location"]["full"]    = f"{name}, {state}, {country}"
+        except Exception:
+            pass
+        return weather
+    except Exception as e:
+        return {"error": str(e)}
