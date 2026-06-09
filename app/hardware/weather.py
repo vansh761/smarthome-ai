@@ -3,62 +3,69 @@ from datetime import datetime
 from typing import Optional
 
 
-def geocode_place(place_name: str, country: str = "IN") -> dict:
+def geocode_place(place_name: str) -> dict:
     """
-    Convert any place name to coordinates using Open-Meteo geocoding.
-    Works for cities, districts, villages, colonies, landmarks.
-    Free, no API key required.
+    Convert any place name to coordinates.
+    Supports cities, districts, villages, colonies, cantonments worldwide.
     """
-    url    = "https://geocoding-api.open-meteo.com/v1/search"
-    params = {
-        "name":     place_name,
-        "count":    10,
-        "language": "en",
-        "format":   "json",
-    }
+    # Try multiple search strategies for better coverage
+    search_attempts = [
+        place_name,
+        place_name.replace("cantt", "cantonment"),
+        place_name.replace("cantonment", "cantt"),
+        place_name.split(",")[0].strip(),  # just the first part
+    ]
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data     = response.json()
-
-        if not data.get("results"):
-            return {
-                "found": False,
-                "error": f"No location found for '{place_name}'",
-                "tip":   "Try adding state or district name. Example: 'Chandni Chowk, Delhi'",
-            }
-
-        results = []
-        for r in data["results"]:
-            results.append({
-                "name":       r.get("name", ""),
-                "state":      r.get("admin1", ""),
-                "district":   r.get("admin2", ""),
-                "country":    r.get("country", ""),
-                "lat":        r["latitude"],
-                "lon":        r["longitude"],
-                "elevation":  r.get("elevation", 0),
-                "population": r.get("population", 0),
-                "timezone":   r.get("timezone", "Asia/Kolkata"),
-            })
-
-        # Return best match (first result) and all alternatives
-        best   = results[0]
-        others = results[1:]
-
-        return {
-            "found":        True,
-            "best_match":   best,
-            "alternatives": others,
-            "search_query": place_name,
+    for attempt in search_attempts:
+        url    = "https://geocoding-api.open-meteo.com/v1/search"
+        params = {
+            "name":     attempt,
+            "count":    10,
+            "language": "en",
+            "format":   "json",
         }
 
-    except requests.exceptions.Timeout:
-        return {"found": False, "error": "Geocoding API timeout"}
-    except Exception as e:
-        return {"found": False, "error": str(e)}
+        try:
+            response = requests.get(url, params=params, timeout=8)
+            response.raise_for_status()
+            data     = response.json()
 
+            if data.get("results"):
+                results = []
+                for r in data["results"]:
+                    results.append({
+                        "name":       r.get("name", ""),
+                        "state":      r.get("admin1", ""),
+                        "district":   r.get("admin2", ""),
+                        "sub":        r.get("admin3", "") or r.get("admin4", ""),
+                        "country":    r.get("country", ""),
+                        "lat":        r["latitude"],
+                        "lon":        r["longitude"],
+                        "elevation":  r.get("elevation", 0),
+                        "population": r.get("population", 0),
+                        "timezone":   r.get("timezone", "Asia/Kolkata"),
+                        "feature":    r.get("feature_code", ""),
+                    })
+
+                best   = results[0]
+                others = results[1:]
+
+                return {
+                    "found":        True,
+                    "best_match":   best,
+                    "alternatives": others,
+                    "search_query": place_name,
+                }
+
+        except Exception:
+            continue
+
+    return {
+        "found": False,
+        "error": f"No location found for '{place_name}'",
+        "tip":   "Try: 'Ambala Cantt Haryana' or 'Lajpat Nagar Delhi'",
+    }
+    
 
 def get_weather(lat: float, lon: float, timezone: str = "Asia/Kolkata") -> dict:
     """
