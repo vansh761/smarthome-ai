@@ -1,7 +1,6 @@
 import random
 from datetime import datetime
 from app.models.environment import EnvironmentState
-from app.hardware.weather import get_weather_by_place
 import random
 from datetime import datetime
 
