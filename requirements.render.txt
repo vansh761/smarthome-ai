@@ -16,3 +16,4 @@ requests
 paho-mqtt
 anthropic
 groq
+google-generativeai
