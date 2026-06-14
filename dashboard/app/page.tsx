@@ -536,7 +536,7 @@ export default function Dashboard() {
   const [history,       setHistory]       = useState<HistoryEntry[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [lastUpdated,   setLastUpdated]   = useState("");
-  const [activeTab,     setActiveTab]     = useState<"environment"|"devices"|"health"|"emotion"|"sleep"|"energy">("environment");
+  const [activeTab, setActiveTab] = useState<"environment"|"devices"|"health"|"emotion"|"sleep"|"energy"|"chat">("environment");
   const [chatMessages,  setChatMessages]  = useState<{role:string,content:string}[]>(
     () => loadFromStorage("chatMessages", [])
   );
