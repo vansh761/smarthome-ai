@@ -84,45 +84,54 @@ def sleep_conditions(name: str):
 
 @router.get("/gps")
 def weather_by_gps(lat: float, lon: float):
-    """
-    Get weather for exact GPS coordinates from device location API.
-    Frontend calls browser geolocation and passes coordinates here.
-    """
-    from app.hardware.weather import get_weather, geocode_place
-    import requests
+    """Get weather for GPS coordinates with full place name."""
+    import requests as req
+    from app.hardware.weather import get_weather
 
-    # Reverse geocode to get place name
+    weather = get_weather(lat, lon)
+
+    place_name = f"{lat:.4f}, {lon:.4f}"
+    full_address = ""
+
     try:
-        url    = "https://geocoding-api.open-meteo.com/v1/search"
-        # Use Open-Meteo's reverse geocoding via nearest search
-        weather = get_weather(lat, lon)
+        nom = req.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params  = {"lat": lat, "lon": lon, "format": "json", "zoom": 16},
+            headers = {"User-Agent": "SmartHomeAI/1.0"},
+            timeout = 6,
+        ).json()
+        addr = nom.get("address", {})
+        suburb  = addr.get("suburb") or addr.get("neighbourhood") or addr.get("hamlet") or ""
+        city    = addr.get("city") or addr.get("town") or addr.get("village") or ""
+        state   = addr.get("state", "")
+        country = addr.get("country", "")
+        district= addr.get("county", "")
+
+        if suburb:
+            place_name   = suburb
+            full_address = f"{suburb}, {city}, {state}, {country}"
+        elif city:
+            place_name   = city
+            full_address = f"{city}, {state}, {country}"
+
         weather["location"] = {
-            "lat": lat,
-            "lon": lon,
-            "name": f"GPS Location ({lat:.4f}, {lon:.4f})",
-            "note": "Detected from device GPS",
+            "name":        place_name,
+            "full":        full_address or nom.get("display_name", ""),
+            "suburb":      suburb,
+            "city":        city,
+            "district":    district,
+            "state":       state,
+            "country":     country,
+            "lat":         lat,
+            "lon":         lon,
+            "detected_by": "GPS + OpenStreetMap reverse geocoding",
         }
-        # Try to get place name from coordinates using nominatim
-        try:
-            nom = requests.get(
-                f"https://nominatim.openstreetmap.org/reverse",
-                params={"lat":lat,"lon":lon,"format":"json"},
-                headers={"User-Agent":"SmartHomeAI/1.0"},
-                timeout=5,
-            ).json()
-            addr = nom.get("address", {})
-            name = (addr.get("suburb") or addr.get("neighbourhood") or
-                    addr.get("town") or addr.get("city") or
-                    addr.get("village") or addr.get("county") or "")
-            state = addr.get("state", "")
-            country = addr.get("country", "")
-            if name:
-                weather["location"]["name"]    = name
-                weather["location"]["state"]   = state
-                weather["location"]["country"] = country
-                weather["location"]["full"]    = f"{name}, {state}, {country}"
-        except Exception:
-            pass
-        return weather
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        weather["location"] = {
+            "name":        place_name,
+            "lat":         lat,
+            "lon":         lon,
+            "detected_by": "GPS coordinates",
+        }
+
+    return weather
