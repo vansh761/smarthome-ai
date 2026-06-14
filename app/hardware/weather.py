@@ -5,65 +5,101 @@ from typing import Optional
 
 def geocode_place(place_name: str) -> dict:
     """
-    Convert any place name to coordinates.
-    Supports cities, districts, villages, colonies, cantonments worldwide.
+    Multi-source geocoding for maximum coverage.
+    Source 1: Nominatim (OpenStreetMap) — has every village, colony, cantonment
+    Source 2: Open-Meteo geocoding — backup
     """
-    # Try multiple search strategies for better coverage
-    search_attempts = [
-        place_name,
-        place_name.replace("cantt", "cantonment"),
-        place_name.replace("cantonment", "cantt"),
-        place_name.split(",")[0].strip(),  # just the first part
-    ]
-
-    for attempt in search_attempts:
-        url    = "https://geocoding-api.open-meteo.com/v1/search"
-        params = {
-            "name":     attempt,
-            "count":    10,
-            "language": "en",
-            "format":   "json",
+    # Source 1: Nominatim — best coverage for India
+    try:
+        nom_url = "https://nominatim.openstreetmap.org/search"
+        nom_params = {
+            "q":              place_name,
+            "format":         "json",
+            "limit":          10,
+            "addressdetails": 1,
+            "countrycodes":   "",  # empty = worldwide
         }
+        nom_response = requests.get(
+            nom_url,
+            params  = nom_params,
+            headers = {"User-Agent": "SmartHomeAI/1.0 (educational project)"},
+            timeout = 8,
+        )
+        nom_data = nom_response.json()
 
-        try:
-            response = requests.get(url, params=params, timeout=8)
-            response.raise_for_status()
-            data     = response.json()
+        if nom_data:
+            results = []
+            for r in nom_data:
+                addr  = r.get("address", {})
+                name  = (addr.get("suburb") or addr.get("neighbourhood") or
+                         addr.get("hamlet") or addr.get("village") or
+                         addr.get("town") or addr.get("city") or
+                         addr.get("county") or r.get("display_name","").split(",")[0])
+                state   = addr.get("state", "")
+                country = addr.get("country", "")
+                results.append({
+                    "name":      name,
+                    "state":     state,
+                    "district":  addr.get("county", ""),
+                    "country":   country,
+                    "lat":       float(r["lat"]),
+                    "lon":       float(r["lon"]),
+                    "elevation": 0,
+                    "timezone":  "Asia/Kolkata" if country == "India" else "UTC",
+                    "display":   r.get("display_name",""),
+                })
 
-            if data.get("results"):
-                results = []
-                for r in data["results"]:
-                    results.append({
-                        "name":       r.get("name", ""),
-                        "state":      r.get("admin1", ""),
-                        "district":   r.get("admin2", ""),
-                        "sub":        r.get("admin3", "") or r.get("admin4", ""),
-                        "country":    r.get("country", ""),
-                        "lat":        r["latitude"],
-                        "lon":        r["longitude"],
-                        "elevation":  r.get("elevation", 0),
-                        "population": r.get("population", 0),
-                        "timezone":   r.get("timezone", "Asia/Kolkata"),
-                        "feature":    r.get("feature_code", ""),
-                    })
+            best   = results[0]
+            others = results[1:5]
 
-                best   = results[0]
-                others = results[1:]
+            return {
+                "found":        True,
+                "best_match":   best,
+                "alternatives": others,
+                "search_query": place_name,
+                "source":       "nominatim",
+            }
 
-                return {
-                    "found":        True,
-                    "best_match":   best,
-                    "alternatives": others,
-                    "search_query": place_name,
-                }
+    except Exception as e:
+        print(f"Nominatim failed: {e}")
 
-        except Exception:
-            continue
+    # Source 2: Open-Meteo geocoding as backup
+    try:
+        url    = "https://geocoding-api.open-meteo.com/v1/search"
+        params = {"name": place_name, "count": 10, "language": "en", "format": "json"}
+        response = requests.get(url, params=params, timeout=8)
+        data     = response.json()
+
+        if data.get("results"):
+            results = []
+            for r in data["results"]:
+                results.append({
+                    "name":      r.get("name", ""),
+                    "state":     r.get("admin1", ""),
+                    "district":  r.get("admin2", ""),
+                    "country":   r.get("country", ""),
+                    "lat":       r["latitude"],
+                    "lon":       r["longitude"],
+                    "elevation": r.get("elevation", 0),
+                    "timezone":  r.get("timezone", "Asia/Kolkata"),
+                    "display":   f"{r.get('name')}, {r.get('admin1')}, {r.get('country')}",
+                })
+
+            return {
+                "found":        True,
+                "best_match":   results[0],
+                "alternatives": results[1:5],
+                "search_query": place_name,
+                "source":       "open-meteo",
+            }
+
+    except Exception as e:
+        print(f"Open-Meteo geocoding failed: {e}")
 
     return {
         "found": False,
-        "error": f"No location found for '{place_name}'",
-        "tip":   "Try: 'Ambala Cantt Haryana' or 'Lajpat Nagar Delhi'",
+        "error": f"Location '{place_name}' not found",
+        "tip":   "Try adding state: 'Ambala Cantt, Haryana' or 'Lajpat Nagar, Delhi'",
     }
     
 
