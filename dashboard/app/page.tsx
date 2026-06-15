@@ -325,9 +325,7 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(true);
   const [lastUpdated,   setLastUpdated]   = useState("");
   const [backendError,  setBackendError]  = useState("");
-  const [activeTab,     setActiveTab]     = useState
-    "environment"|"devices"|"health"|"emotion"|"sleep"|"energy"|"chat"
-  >(() => load("activeTab", "environment") as any);
+  const [activeTab, setActiveTab] = useState<"environment"|"devices"|"health"|"emotion"|"sleep"|"energy"|"chat">(() => load("activeTab", "environment") as any);
 
   const [healthForm,    setHealthForm]    = useState(() => load("healthForm", {
     temperature_c: 26, noise_db: 40, light_level: 20,
