@@ -16,6 +16,8 @@ from app.routers import demo
 from app.routers import device_timer
 from app.routers import smart_devices
 from app.routers import chat
+from app.routers import state
+
 
 app = FastAPI(
     title        = "AI Smart Home Intelligence System",
@@ -89,6 +91,7 @@ app.include_router(demo.router)
 app.include_router(device_timer.router)
 app.include_router(smart_devices.router)
 app.include_router(chat.router)
+app.include_router(state.router)
 
 @app.get("/")
 def root():
