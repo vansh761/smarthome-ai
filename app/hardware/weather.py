@@ -5,42 +5,44 @@ from typing import Optional
 
 def geocode_place(place_name: str) -> dict:
     """
-    Multi-source geocoding for maximum coverage.
-    Source 1: Nominatim (OpenStreetMap) — has every village, colony, cantonment
-    Source 2: Open-Meteo geocoding — backup
+    Triple-source geocoding for maximum worldwide coverage.
+    Source 1: Nominatim (OpenStreetMap) — best for India, colonies, villages
+    Source 2: Open-Meteo geocoding
+    Source 3: Photon geocoder (another OSM-based service)
     """
-    # Source 1: Nominatim — best coverage for India
+
+    # ── Source 1: Nominatim ───────────────────────────────────────────
     try:
-        nom_url = "https://nominatim.openstreetmap.org/search"
-        nom_params = {
-            "q":              place_name,
-            "format":         "json",
-            "limit":          10,
-            "addressdetails": 1,
-            "countrycodes":   "",  # empty = worldwide
-        }
-        nom_response = requests.get(
-            nom_url,
-            params  = nom_params,
-            headers = {"User-Agent": "SmartHomeAI/1.0 (educational project)"},
+        response = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params  = {
+                "q":              place_name,
+                "format":         "json",
+                "limit":          10,
+                "addressdetails": 1,
+            },
+            headers = {"User-Agent": "SmartHomeAI/1.0"},
             timeout = 8,
         )
-        nom_data = nom_response.json()
+        data = response.json()
 
-        if nom_data:
+        if data:
             results = []
-            for r in nom_data:
-                addr  = r.get("address", {})
-                name  = (addr.get("suburb") or addr.get("neighbourhood") or
-                         addr.get("hamlet") or addr.get("village") or
-                         addr.get("town") or addr.get("city") or
-                         addr.get("county") or r.get("display_name","").split(",")[0])
+            for r in data:
+                addr    = r.get("address", {})
+                suburb  = (addr.get("suburb") or addr.get("neighbourhood") or
+                           addr.get("hamlet") or addr.get("quarter") or
+                           addr.get("village") or "")
+                city    = (addr.get("city") or addr.get("town") or
+                           addr.get("municipality") or "")
                 state   = addr.get("state", "")
                 country = addr.get("country", "")
+                name    = suburb or city or r.get("display_name","").split(",")[0]
+
                 results.append({
                     "name":      name,
                     "state":     state,
-                    "district":  addr.get("county", ""),
+                    "district":  addr.get("county",""),
                     "country":   country,
                     "lat":       float(r["lat"]),
                     "lon":       float(r["lon"]),
@@ -49,26 +51,63 @@ def geocode_place(place_name: str) -> dict:
                     "display":   r.get("display_name",""),
                 })
 
-            best   = results[0]
-            others = results[1:5]
-
             return {
                 "found":        True,
-                "best_match":   best,
-                "alternatives": others,
+                "best_match":   results[0],
+                "alternatives": results[1:5],
                 "search_query": place_name,
                 "source":       "nominatim",
             }
-
     except Exception as e:
         print(f"Nominatim failed: {e}")
 
-    # Source 2: Open-Meteo geocoding as backup
+    # ── Source 2: Photon (OSM-based, very good for India) ─────────────
     try:
-        url    = "https://geocoding-api.open-meteo.com/v1/search"
-        params = {"name": place_name, "count": 10, "language": "en", "format": "json"}
-        response = requests.get(url, params=params, timeout=8)
-        data     = response.json()
+        response = requests.get(
+            "https://photon.komoot.io/api/",
+            params  = {"q": place_name, "limit": 5},
+            timeout = 8,
+        )
+        data = response.json()
+        features = data.get("features", [])
+
+        if features:
+            results = []
+            for f in features:
+                props = f.get("properties", {})
+                coords= f.get("geometry", {}).get("coordinates", [0, 0])
+                name  = (props.get("name") or props.get("city") or
+                         props.get("town") or props.get("village") or "")
+                results.append({
+                    "name":      name,
+                    "state":     props.get("state", ""),
+                    "district":  props.get("county", ""),
+                    "country":   props.get("country", ""),
+                    "lat":       coords[1],
+                    "lon":       coords[0],
+                    "elevation": 0,
+                    "timezone":  "Asia/Kolkata",
+                    "display":   f"{name}, {props.get('state','')}, {props.get('country','')}",
+                })
+
+            return {
+                "found":        True,
+                "best_match":   results[0],
+                "alternatives": results[1:],
+                "search_query": place_name,
+                "source":       "photon",
+            }
+    except Exception as e:
+        print(f"Photon failed: {e}")
+
+    # ── Source 3: Open-Meteo ──────────────────────────────────────────
+    try:
+        response = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params  = {"name": place_name, "count": 10, "language": "en", "format": "json"},
+            timeout = 8,
+        )
+        data = response.json()
 
         if data.get("results"):
             results = []
@@ -92,14 +131,13 @@ def geocode_place(place_name: str) -> dict:
                 "search_query": place_name,
                 "source":       "open-meteo",
             }
-
     except Exception as e:
         print(f"Open-Meteo geocoding failed: {e}")
 
     return {
         "found": False,
-        "error": f"Location '{place_name}' not found",
-        "tip":   "Try adding state: 'Ambala Cantt, Haryana' or 'Lajpat Nagar, Delhi'",
+        "error": f"Location '{place_name}' not found in any geocoding service",
+        "tip":   "Try adding state: 'Ambala Cantt, Haryana' or 'Kasol, Himachal Pradesh'",
     }
     
 
