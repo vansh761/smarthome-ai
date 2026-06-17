@@ -76,6 +76,7 @@ def get_groq_response(messages: list, system_prompt: str) -> str:
     """Try Groq API first — free and fast."""
     api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
+        print("GROQ_API_KEY not set in environment")
         return None
 
     try:
@@ -92,9 +93,8 @@ def get_groq_response(messages: list, system_prompt: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"Groq API error: {e}")
+        print(f"Groq API error: {type(e).__name__}: {e}")
         return None
-
 
 def get_gemini_response(messages: list, system_prompt: str) -> str:
     """Try Gemini API as backup — also free."""
@@ -127,61 +127,37 @@ def get_gemini_response(messages: list, system_prompt: str) -> str:
 
 @router.post("/message")
 def chat(req: ChatRequest):
-    """
-    Conversational AI in user's language.
-    Uses Groq (free) → Gemini (free) → fallback response.
-    """
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(
-        req.language,
-        f"Respond in {req.language}. Be warm and friendly."
+        req.language, f"Respond in {req.language}. Be warm and friendly."
     )
 
     system_prompt = f"""You are a friendly AI smart home assistant for Indian families. {lang_instruction}
 
-You help users with:
-- Home comfort (temperature, noise, light adjustments)
-- Emotional well-being and stress relief
-- Energy saving tips in simple language
-- Sleep quality improvement
-- Health-based environment suggestions
-- Indian home remedies (gharelu upay) for common conditions
+You help users with home comfort, emotional well-being, energy saving, sleep quality,
+and health-based suggestions including Indian home remedies (gharelu upay).
 
-Keep responses SHORT — 2-3 sentences only.
-Be warm and caring like a good family friend (dost/bhai/didi).
-Use simple everyday language, not technical terms.
-If suggesting adjustments, be specific: "AC ko 22°C par set karo" not just "cool the room".
+Keep responses SHORT — 2-3 sentences only. Be warm like a good friend.
+Respond specifically to what the user just said — do not repeat a generic greeting.
 
 Current context:
 - User emotion: {req.user_emotion or 'not detected yet'}
 - Room conditions: {req.room_conditions or 'not available'}
-- Language preference: {req.language}
 """
 
-    messages = [
-        {"role": m.role, "content": m.content}
-        for m in req.messages
-    ]
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
-    # Try Groq first
-    reply = get_groq_response(messages, system_prompt)
+    reply  = get_groq_response(messages, system_prompt)
     source = "groq"
 
-    # Try Gemini as backup
     if not reply:
         reply  = get_gemini_response(messages, system_prompt)
         source = "gemini"
 
-    # Use fallback if both fail
     if not reply:
         reply  = FALLBACK_RESPONSES.get(req.language, FALLBACK_RESPONSES["English"])
         source = "fallback"
 
-    return {
-        "reply":    reply,
-        "language": req.language,
-        "source":   source,
-    }
-
+    return {"reply": reply, "language": req.language, "source": source}
 
 @router.get("/languages")
 def supported_languages():
