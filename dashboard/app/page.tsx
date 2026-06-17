@@ -469,7 +469,7 @@ export default function Dashboard() {
 
                 <StatCard icon={<Volume2 size={18}/>} label="Indoor Noise"
                   value={mic.db ?? liveRoom.noise_db} unit="dB"
-                  sub={mic.active ? "live microphone" : "simulated"}/>
+                  sub={mic.db !== null ? (mic.active ? "live microphone" : "last recorded reading") : "simulated"}/>
 
                 <StatCard icon={<Zap size={18}/>} label="Power Usage"
                   value={liveRoom.power_watts} unit="W"
