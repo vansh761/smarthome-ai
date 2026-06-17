@@ -109,7 +109,8 @@ function useMicrophone() {
   const stop = () => {
     streamRef.current?.getTracks().forEach(t => t.stop());
     if (timerRef.current) clearInterval(timerRef.current);
-    setActive(false); setDb(null);
+    setActive(false);
+    // Keep last db reading — don't reset to null
   };
 
   useEffect(() => () => stop(), []);
@@ -147,8 +148,8 @@ export default function Dashboard() {
   const [loading,      setLoading]      = useState(true);
   const [lastUpdated,  setLastUpdated]  = useState("");
   const [backendError, setBackendError] = useState("");
-  const [activeTab,    setActiveTab]    = useState<"environment"|"devices"|"health"|"weather"|"chat">(() => load("activeTab", "environment") as any);
-
+  const [activeTab, setActiveTab] = useState<"environment"|"devices"|"health"|"weather"|"emotion"|"chat">(() => load("activeTab", "environment") as any);
+  
   // Live overrides from user's device
   const [acOn,          setAcOn]          = useState(false);
   const [fanOn,         setFanOn]         = useState(false);
@@ -324,11 +325,12 @@ export default function Dashboard() {
     music_playing:  !!currentMusic,
   } : null;
 
-  const TABS = [
+ const TABS = [
     { id:"environment", label:"🏠 Environment" },
     { id:"devices",     label:"⚡ Devices" },
     { id:"health",      label:"❤️ Health & Sleep" },
     { id:"weather",     label:"🌤 Weather" },
+    { id:"emotion",     label:"😊 Emotion" },
     { id:"chat",        label:"💬 Talk to AI" },
   ];
 
@@ -748,28 +750,7 @@ export default function Dashboard() {
             Uses 3 geocoding sources for maximum coverage. Try: "Kasol", "Ambala Cantt", "Sector 17 Chandigarh"
           </p>
 
-          {/* Emotion analysis */}
-          <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4 mb-4">
-            <p className="text-sm font-medium mb-3">Emotion Detection</p>
-            <textarea value={emotionText} onChange={e => setEmotionText(e.target.value)}
-              placeholder="How are you feeling? Any Indian language..."
-              className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm h-16 resize-none mb-2"/>
-            <button onClick={analyzeEmotion} disabled={emotionLoading}
-              className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm">
-              {emotionLoading ? "Analyzing... (30-60s first time)" : "Detect Emotion"}
-            </button>
-            {emotionResult && !emotionResult.error && (
-              <div className="mt-2 flex items-center justify-between">
-                <div>
-                  <span className="text-white font-medium capitalize">{emotionResult.detected_emotion}</span>
-                  <span className="text-gray-400 text-xs ml-2">{emotionResult.confidence}% · {emotionResult.language_detected}</span>
-                </div>
-                <span className="text-xs text-gray-400">{emotionResult.environment_suggestion?.message}</span>
-              </div>
-            )}
-            {emotionResult?.error && <p className="text-xs text-red-400 mt-1">{emotionResult.error}</p>}
-          </div>
-
+          
           {weatherResult && !weatherResult.error && (
             <div className="space-y-3">
               <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
@@ -862,6 +843,63 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── EMOTION ─────────────────────────────────────────────────── */}
+      {activeTab === "emotion" && (
+        <div>
+          <h2 className="text-lg font-semibold mb-2">Emotion Detection</h2>
+          <p className="text-sm text-gray-400 mb-4">
+            Type how you feel in any Indian language. System detects emotion and suggests
+            an environment adjustment. First request may take 30-60s if backend was sleeping.
+          </p>
+          <textarea value={emotionText} onChange={e => setEmotionText(e.target.value)}
+            placeholder="How are you feeling? Hindi, English, Tamil, any Indian language..."
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm h-24 resize-none mb-3 border border-gray-700"/>
+          <button onClick={analyzeEmotion} disabled={emotionLoading}
+            className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-3 rounded-xl font-medium mb-4">
+            {emotionLoading ? "Analyzing... (30-60s first time)" : "Detect Emotion"}
+          </button>
+
+          {emotionResult?.error && (
+            <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-4">
+              <p className="text-red-400 text-sm">{emotionResult.error}</p>
+            </div>
+          )}
+
+          {emotionResult && !emotionResult.error && (
+            <div className="space-y-3">
+              <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <p className="text-2xl font-bold text-white capitalize">{emotionResult.detected_emotion}</p>
+                    <p className="text-xs text-gray-400">
+                      {emotionResult.confidence}% confidence · {emotionResult.language_detected}
+                      {emotionResult.detection_source && ` · ${emotionResult.detection_source}`}
+                    </p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    emotionResult.auto_act ? "bg-green-900/40 text-green-400" : "bg-yellow-900/40 text-yellow-400"
+                  }`}>
+                    {emotionResult.auto_act ? "Auto-adjusting" : "Suggestion"}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-300">{emotionResult.explanation}</p>
+              </div>
+
+              <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-4">
+                <p className="text-sm font-medium mb-2">Environment Adjustment</p>
+                <p className="text-sm text-gray-300 mb-2">{emotionResult.environment_suggestion?.message}</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <p className="text-gray-400">Temp: <span className="text-white">{emotionResult.environment_suggestion?.temperature_c}°C</span></p>
+                  <p className="text-gray-400">Light: <span className="text-white">{emotionResult.environment_suggestion?.light_level}%</span></p>
+                  <p className="text-gray-400">Color: <span className="text-white">{emotionResult.environment_suggestion?.light_color}</span></p>
+                  <p className="text-gray-400">Music: <span className="text-white">{emotionResult.environment_suggestion?.music}</span></p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
       {/* ── CHAT ────────────────────────────────────────────────────── */}
       {activeTab === "chat" && (
         <div className="flex flex-col" style={{height:"75vh"}}>
