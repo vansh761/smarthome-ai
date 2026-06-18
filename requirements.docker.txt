@@ -17,4 +17,4 @@ torchvision --index-url https://download.pytorch.org/whl/cpu
 sentence-transformers
 transformers
 groq
-google-generativeai
+google.generativeai
