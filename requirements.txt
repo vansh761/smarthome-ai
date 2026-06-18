@@ -114,4 +114,4 @@ websockets==16.0
 xgboost==3.2.0
 zipp==3.23.1
 groq
-google.generativeai
+google-generativeai
