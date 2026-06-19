@@ -71,6 +71,35 @@ FALLBACK_RESPONSES = {
     "Nepali":    "नमस्ते! म तपाईंको स्मार्ट होम असिस्टेन्ट हुँ। तपाईं कस्तो हुनुहुन्छ?",
 }
 
+def detect_input_language(text: str) -> str:
+    """Detect script/language from user input text to override dropdown if needed."""
+    scripts = {
+        "Hindi":     range(0x0900, 0x097F),
+        "Bengali":   range(0x0980, 0x09FF),
+        "Gujarati":  range(0x0A80, 0x0AFF),
+        "Tamil":     range(0x0B80, 0x0BFF),
+        "Telugu":    range(0x0C00, 0x0C7F),
+        "Kannada":   range(0x0C80, 0x0CFF),
+        "Malayalam": range(0x0D00, 0x0D7F),
+        "Odia":      range(0x0B00, 0x0B7F),
+        "Punjabi":   range(0x0A00, 0x0A7F),
+        "Urdu":      range(0x0600, 0x06FF),
+    }
+    for char in text:
+        code = ord(char)
+        for lang, rng in scripts.items():
+            if code in rng:
+                return lang
+
+    # Romanized check for Hinglish vs English
+    hindi_markers = ["hai","hoon","kar","ho","mein","ka","ki","ke","nahi","kya",
+                      "bahut","mujhe","tum","aap","raha","rahi","rahe"]
+    lower = text.lower()
+    if any(f" {m} " in f" {lower} " for m in hindi_markers):
+        return "Hinglish"
+
+    return None  # no strong signal — fall back to dropdown
+    
 
 def get_groq_response(messages: list, system_prompt: str) -> str:
     """Try Groq API first — free and fast."""
@@ -127,17 +156,20 @@ def get_gemini_response(messages: list, system_prompt: str) -> str:
 
 @router.post("/message")
 def chat(req: ChatRequest):
+    last_user_msg = req.messages[-1].content if req.messages else ""
+    detected_lang = detect_input_language(last_user_msg)
+    effective_lang = detected_lang or req.language
+
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(
-        req.language, f"Respond in {req.language}. Be warm and friendly."
+        effective_lang, f"Respond in {effective_lang}. Be warm and friendly."
     )
 
     system_prompt = f"""You are a friendly AI smart home assistant for Indian families. {lang_instruction}
 
-You help users with home comfort, emotional well-being, energy saving, sleep quality,
-and health-based suggestions including Indian home remedies (gharelu upay).
+IMPORTANT: Always reply in the SAME language/script the user just wrote in. If they switch language mid-conversation, switch with them immediately.
 
-Keep responses SHORT — 2-3 sentences only. Be warm like a good friend.
-Respond specifically to what the user just said — do not repeat a generic greeting.
+You help with home comfort, emotional well-being, energy saving, sleep quality, and Indian home remedies (gharelu upay).
+Keep responses SHORT — 2-3 sentences only. Be warm like a good friend. Respond specifically to what the user just said.
 
 Current context:
 - User emotion: {req.user_emotion or 'not detected yet'}
@@ -148,16 +180,14 @@ Current context:
 
     reply  = get_groq_response(messages, system_prompt)
     source = "groq"
-
     if not reply:
         reply  = get_gemini_response(messages, system_prompt)
         source = "gemini"
-
     if not reply:
-        reply  = FALLBACK_RESPONSES.get(req.language, FALLBACK_RESPONSES["English"])
+        reply  = FALLBACK_RESPONSES.get(effective_lang, FALLBACK_RESPONSES["English"])
         source = "fallback"
 
-    return {"reply": reply, "language": req.language, "source": source}
+    return {"reply": reply, "language": effective_lang, "detected": detected_lang, "source": source}
 
 @router.get("/languages")
 def supported_languages():
