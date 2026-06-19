@@ -13,8 +13,9 @@ COPY requirements.docker.txt .
 RUN pip install --no-cache-dir --timeout=120 \
     fastapi uvicorn sqlalchemy aiosqlite databases \
     scikit-learn xgboost pandas numpy joblib \
-    textblob chromadb pydantic python-multipart
-
+    textblob chromadb pydantic python-multipart \
+    requests paho-mqtt groq google-generativeai
+    
 RUN pip install --no-cache-dir --timeout=300 \
     torch --index-url https://download.pytorch.org/whl/cpu
 
