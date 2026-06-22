@@ -1,0 +1,5 @@
+sentiment140.csv
+indisentiment140_reconstructed/
+relabeled_emotions/
+*.csv
+!spotcheck_for_human_review/*.csv
