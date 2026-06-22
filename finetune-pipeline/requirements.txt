@@ -1,0 +1,7 @@
+deep-translator
+pandas
+groq
+IndicTransToolkit
+torch
+transformers
+requests
