@@ -5,3 +5,6 @@ IndicTransToolkit
 torch
 transformers
 requests
+scikit-learn
+sentence-transformers
+joblib
