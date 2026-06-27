@@ -97,15 +97,16 @@ function StatCard({ icon, label, value, unit, active, sub }: any) {
   );
 }
 
-// ── Microphone hook (one shared mic, value written into selected room) ──
+// ── Microphone hook (bound to ONE specific room for its whole session) ──
 function useMicrophone() {
-  const [db,       setDb]       = useState<number | null>(null);
-  const [active,   setActive]   = useState(false);
-  const [error,    setError]    = useState("");
+  const [db,         setDb]         = useState<number | null>(null);
+  const [active,     setActive]     = useState(false);
+  const [boundRoom,  setBoundRoom]  = useState<string | null>(null);
+  const [error,      setError]      = useState("");
   const streamRef  = useRef<MediaStream | null>(null);
   const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const start = async () => {
+  const start = async (room: string) => {
     try {
       const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -114,7 +115,9 @@ function useMicrophone() {
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      setActive(true); setError("");
+      setActive(true);
+      setBoundRoom(room);   // pin this mic session to exactly this room
+      setError("");
       timerRef.current = setInterval(() => {
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
@@ -128,17 +131,19 @@ function useMicrophone() {
     streamRef.current?.getTracks().forEach(t => t.stop());
     if (timerRef.current) clearInterval(timerRef.current);
     setActive(false);
-    // last reading intentionally kept, not reset to null
+    setBoundRoom(null);
+    // last db reading intentionally kept, not reset to null
   };
 
   useEffect(() => () => stop(), []);
-  return { db, active, error, start, stop };
+  return { db, active, boundRoom, error, start, stop };
 }
 
-// ── Light sensor hook ─────────────────────────────────────────────────────
+// ── Light sensor hook (bound to ONE room, like the mic) ──────────────────
 function useLightSensorRaw() {
   const [illuminance, setIlluminance] = useState<number | null>(null);
   const [supported,   setSupported]   = useState(false);
+  const [boundRoom,   setBoundRoom]   = useState<string | null>(null);
 
   useEffect(() => {
     if ("AmbientLightSensor" in window) {
@@ -155,7 +160,12 @@ function useLightSensorRaw() {
   }, []);
 
   const level = illuminance !== null ? Math.min(100, Math.round((illuminance / 1000) * 100)) : null;
-  return { level, supported };
+
+  // bindTo: call this once when a room is selected and you want the sensor
+  // to start reporting into that room specifically
+  const bindTo = (room: string) => setBoundRoom(room);
+
+  return { level, supported, boundRoom, bindTo };
 }
 
 // ── Detect language of typed text (script-based, used to override chat dropdown) ──
@@ -212,19 +222,31 @@ export default function Dashboard() {
     setRoomOverrides(prev => ({ ...prev, [room]: { ...prev[room], ...patch } }));
   }
 
-  // Mic value is global hardware, but gets written into the CURRENTLY SELECTED room only
+  // Mic value writes ONLY into whichever room it was started for (boundRoom),
+  // never into selectedRoom -- this is what prevents cross-room bleed when
+  // you switch tabs/rooms while the mic is still running.
   useEffect(() => {
-    if (mic.db !== null) {
-      updateRoomOverride(selectedRoom, { micDb: mic.db });
+    if (mic.db !== null && mic.boundRoom) {
+      updateRoomOverride(mic.boundRoom, { micDb: mic.db });
     }
-  }, [mic.db, selectedRoom]);
+  }, [mic.db, mic.boundRoom]);
 
-  // Light sensor likewise writes into selected room
+  // Light sensor: only writes into boundRoom once one is set, never into
+  // whatever room happens to be selected -- same fix pattern as the mic.
+  // First time the sensor activates with no boundRoom set yet, bind it to
+  // whatever room is currently selected (sensible default since there's no
+  // explicit start button for this one).
   useEffect(() => {
-    if (lightRaw.level !== null) {
-      updateRoomOverride(selectedRoom, { lightLevel: lightRaw.level, lightFromSensor: true });
+    if (lightRaw.level !== null && !lightRaw.boundRoom) {
+      lightRaw.bindTo(selectedRoom);
     }
-  }, [lightRaw.level, selectedRoom]);
+  }, [lightRaw.level, lightRaw.boundRoom, selectedRoom]);
+
+  useEffect(() => {
+    if (lightRaw.level !== null && lightRaw.boundRoom) {
+      updateRoomOverride(lightRaw.boundRoom, { lightLevel: lightRaw.level, lightFromSensor: true });
+    }
+  }, [lightRaw.level, lightRaw.boundRoom]);
 
   const [weatherTemp,   setWeatherTemp]   = useState<number | null>(() => load("weatherTemp", null));
   const [weatherPlace,  setWeatherPlace]  = useState(() => load("weatherPlace", ""));
@@ -558,7 +580,11 @@ export default function Dashboard() {
 
                   <StatCard icon={<Volume2 size={18}/>} label="Indoor Noise"
                     value={override.micDb ?? liveRoom.noise_db} unit="dB"
-                    sub={override.micDb !== null ? (mic.active && selectedRoom ? "live microphone" : "last recorded — this room") : "simulated"}/>
+                    sub={
+                      mic.active && mic.boundRoom === selectedRoom ? "live microphone — this room" :
+                      override.micDb !== null ? "last recorded — this room" :
+                      "simulated"
+                    }/>
 
                   <StatCard icon={<Zap size={18}/>} label="Power Usage"
                     value={liveRoom.power_watts} unit="W"
@@ -566,7 +592,11 @@ export default function Dashboard() {
 
                   <StatCard icon={<Sun size={18}/>} label="Light Level"
                     value={liveRoom.light_level} unit="%"
-                    sub={override.lightFromSensor ? "live sensor" : "manual/simulated"}/>
+                    sub={
+                      lightRaw.supported && lightRaw.boundRoom === selectedRoom ? "live sensor — this room" :
+                      lightRaw.supported && lightRaw.boundRoom !== selectedRoom ? `sensor bound to ${ROOMS[lightRaw.boundRoom!]}` :
+                      "manual/simulated"
+                    }/>
 
                   <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-3 sm:p-4">
                     <p className="text-xs text-gray-400 mb-2">AC / Fan — {ROOMS[selectedRoom]}</p>
@@ -605,15 +635,32 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2 min-w-0">
                       <Volume2 size={14} className="text-blue-400 flex-shrink-0"/>
                       <span className="text-sm font-medium truncate">Live Mic → {ROOMS[selectedRoom]}</span>
-                      {mic.active && <span className="text-xs text-green-400 flex-shrink-0">● Rec</span>}
+                      {mic.active && mic.boundRoom === selectedRoom && (
+                        <span className="text-xs text-green-400 flex-shrink-0">● Rec</span>
+                      )}
+                      {mic.active && mic.boundRoom !== selectedRoom && (
+                        <span className="text-xs text-yellow-400 flex-shrink-0">● Rec in {ROOMS[mic.boundRoom!]}</span>
+                      )}
                     </div>
-                    <button onClick={mic.active ? mic.stop : mic.start}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium flex-shrink-0 ${mic.active ? "bg-red-600 text-white" : "bg-green-600 text-white"}`}>
-                      {mic.active ? "Stop" : "Start Mic"}
-                    </button>
+                    {mic.active && mic.boundRoom === selectedRoom ? (
+                      <button onClick={mic.stop}
+                        className="px-3 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-red-600 text-white">
+                        Stop
+                      </button>
+                    ) : mic.active && mic.boundRoom !== selectedRoom ? (
+                      <button onClick={() => { mic.stop(); mic.start(selectedRoom); }}
+                        className="px-3 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-yellow-600 text-white">
+                        Switch mic here
+                      </button>
+                    ) : (
+                      <button onClick={() => mic.start(selectedRoom)}
+                        className="px-3 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-green-600 text-white">
+                        Start Mic
+                      </button>
+                    )}
                   </div>
                   {mic.error && <p className="text-xs text-red-400">{mic.error}</p>}
-                  {mic.active && mic.db !== null && (
+                  {mic.active && mic.boundRoom === selectedRoom && mic.db !== null && (
                     <div className="flex items-center gap-3">
                       <p className={`text-2xl font-bold flex-shrink-0 ${mic.db>65?"text-red-400":mic.db>45?"text-yellow-400":"text-green-400"}`}>
                         {mic.db} dB
@@ -624,7 +671,13 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
-                  {!mic.active && <p className="text-xs text-gray-500">Reading is saved to whichever room is selected right now</p>}
+                  {mic.active && mic.boundRoom !== selectedRoom && (
+                    <p className="text-xs text-yellow-400">
+                      Mic is currently recording for {ROOMS[mic.boundRoom!]}, not {ROOMS[selectedRoom]}.
+                      Click "Switch mic here" to move it to this room, or it'll keep updating {ROOMS[mic.boundRoom!]} only.
+                    </p>
+                  )}
+                  {!mic.active && <p className="text-xs text-gray-500">Mic reading is locked to whichever room you start it in — switching tabs won't affect it</p>}
                 </div>
 
                 {/* Light level */}
