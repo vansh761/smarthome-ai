@@ -685,18 +685,38 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Sun size={14} className="text-yellow-400"/>
                     <span className="text-sm font-medium">Light → {ROOMS[selectedRoom]}</span>
-                    {override.lightFromSensor && <span className="text-xs text-green-400">● Live sensor</span>}
-                    {!override.lightFromSensor && <span className="text-xs text-gray-500">Manual (sensor N/A on most laptops)</span>}
+                    {lightRaw.supported && lightRaw.boundRoom === selectedRoom && (
+                      <span className="text-xs text-green-400">● Live sensor — this room</span>
+                    )}
+                    {lightRaw.supported && lightRaw.boundRoom && lightRaw.boundRoom !== selectedRoom && (
+                      <span className="text-xs text-yellow-400">● Sensor bound to {ROOMS[lightRaw.boundRoom]}</span>
+                    )}
+                    {!lightRaw.supported && (
+                      <span className="text-xs text-gray-500">Manual (sensor N/A on most laptops)</span>
+                    )}
                   </div>
-                  {!override.lightFromSensor && (
+
+                  {lightRaw.supported && lightRaw.boundRoom && lightRaw.boundRoom !== selectedRoom && (
+                    <div className="mb-2">
+                      <button onClick={() => lightRaw.bindTo(selectedRoom)}
+                        className="px-3 py-1 rounded-lg text-xs font-medium bg-yellow-600 text-white">
+                        Switch sensor here
+                      </button>
+                      <p className="text-xs text-yellow-400 mt-1">
+                        Sensor is currently feeding {ROOMS[lightRaw.boundRoom]}. This room shows its last manual/simulated value until you switch it here.
+                      </p>
+                    </div>
+                  )}
+
+                  {(!lightRaw.supported || lightRaw.boundRoom !== selectedRoom) && (
                     <div className="flex items-center gap-3">
                       <input type="range" min={0} max={100} value={override.lightLevel}
-                        onChange={e => updateRoomOverride(selectedRoom, { lightLevel: Number(e.target.value) })}
+                        onChange={e => updateRoomOverride(selectedRoom, { lightLevel: Number(e.target.value), lightFromSensor: false })}
                         className="flex-1 accent-yellow-400"/>
                       <span className="text-lg font-bold text-yellow-400 w-12 text-right">{override.lightLevel}%</span>
                     </div>
                   )}
-                  {override.lightFromSensor && (
+                  {lightRaw.supported && lightRaw.boundRoom === selectedRoom && (
                     <p className="text-2xl font-bold text-yellow-400">{override.lightLevel}%</p>
                   )}
                 </div>
