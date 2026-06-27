@@ -27,12 +27,14 @@ import time
 import random
 import pandas as pd
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
 SENTIMENT140_CSV = "sentiment140.csv"   # download from kaggle.com/datasets/kazanova/sentiment140
 OUTPUT_DIR       = Path("indisentiment140_reconstructed")
-SAMPLES_PER_LANG = 1000                 # paper used ~1K per language for low-resource langs (Table 2)
+SAMPLES_PER_LANG = 300                  # reduced from 1000 for faster turnaround on a proof-of-concept
+                                         # scale experiment -- still defensible for this report's scope
 TRAIN_TEST_SPLIT = 0.8
 RANDOM_SEED      = 42
 
@@ -354,8 +356,41 @@ def main():
     print(f"Sampled {len(df_sample)} tweets (stratified by polarity) "
           f"for per-language translation.")
 
+    # Split into two groups:
+    #   - Google Translate languages: safe to run concurrently, each request
+    #     is independent and the API handles parallel load fine at low worker counts
+    #   - Low-resource languages (IndicTrans2/Bhashini): run sequentially, since
+    #     IndicTrans2 loads one shared model into memory and isn't thread-safe
+    #     to call from multiple threads simultaneously
+    google_langs       = {k: v for k, v in INDIAN_LANGUAGES.items() if k not in LOW_RESOURCE_LANGUAGES}
+    low_resource_langs = {k: v for k, v in INDIAN_LANGUAGES.items() if k in LOW_RESOURCE_LANGUAGES}
+
     summary_rows = []
-    for lang_name, lang_code in INDIAN_LANGUAGES.items():
+
+    print(f"\n=== Translating {len(google_langs)} languages concurrently (4 workers) ===")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(build_language_dataset, df_sample, name, code): name
+            for name, code in google_langs.items()
+        }
+        for future in as_completed(futures):
+            lang_name = futures[future]
+            try:
+                lang_df = future.result()
+            except Exception as e:
+                print(f"  [error] {lang_name} failed entirely: {e}")
+                continue
+            save_with_split(lang_df, lang_name)
+            summary_rows.append({
+                "language": lang_name,
+                "code": google_langs[lang_name],
+                "samples": len(lang_df),
+                "status": lang_df["translation_status"].iloc[0] if len(lang_df) else "empty",
+            })
+            print(f"  [done] {lang_name} finished ({len(lang_df)} samples)")
+
+    print(f"\n=== Processing {len(low_resource_langs)} low-resource languages sequentially ===")
+    for lang_name, lang_code in low_resource_langs.items():
         lang_df = build_language_dataset(df_sample, lang_name, lang_code)
         save_with_split(lang_df, lang_name)
         summary_rows.append({
@@ -370,7 +405,7 @@ def main():
     print("\n=== DONE ===")
     print(summary.to_string(index=False))
     print(f"\nLanguages needing manual curation (no reliable MT support):")
-    print(f"  {sorted(UNSUPPORTED_OR_UNRELIABLE)}")
+    print(f"  {sorted(LOW_RESOURCE_LANGUAGES)}")
     print(f"\nNext step: run the relabeling pipeline (relabel_emotions.py) on this output.")
 
 
