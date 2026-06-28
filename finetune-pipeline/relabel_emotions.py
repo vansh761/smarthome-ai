@@ -38,6 +38,7 @@ import json
 import time
 import random
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from collections import Counter
 
@@ -46,7 +47,8 @@ from collections import Counter
 INPUT_DIR           = Path("indisentiment140_reconstructed")  # output of previous script
 OUTPUT_DIR           = Path("relabeled_emotions")
 SPOTCHECK_DIR        = Path("spotcheck_for_human_review")
-SAMPLES_PER_LANG_FOR_RELABEL = 200   # keep this modest -- Groq free tier is rate-limited
+SAMPLES_PER_LANG_FOR_RELABEL = 60    # reduced from 200 for faster turnaround -- still enough
+                                      # for a proof-of-concept fine-tuning experiment
 SPOTCHECK_SAMPLE_SIZE        = 30    # per language, drawn from the relabeled set
 RANDOM_SEED          = 42
 
@@ -104,7 +106,7 @@ def relabel_one(client, text: str, polarity: int) -> dict:
         return {"emotion": "neutral", "confidence": "low", "reason": f"error: {e}"}
 
 
-def relabel_language(client, lang_name: str) -> pd.DataFrame:
+def relabel_language(client, lang_name: str, max_workers: int = 6) -> pd.DataFrame:
     train_path = INPUT_DIR / lang_name / "train.csv"
     if not train_path.exists():
         print(f"  [skip] No data for {lang_name}")
@@ -117,20 +119,32 @@ def relabel_language(client, lang_name: str) -> pd.DataFrame:
 
     df = df[df["text_translated"].notna()].reset_index(drop=True)
     df = df.sample(n=min(SAMPLES_PER_LANG_FOR_RELABEL, len(df)), random_state=RANDOM_SEED)
+    df = df.reset_index(drop=True)
 
-    print(f"\n=== Relabeling {lang_name}: {len(df)} samples ===")
-    results = []
-    for i, row in df.reset_index(drop=True).iterrows():
-        result = relabel_one(client, row["text_translated"], row["polarity"])
-        results.append(result)
-        if (i + 1) % 25 == 0:
-            print(f"  ...{i+1}/{len(df)}")
-        time.sleep(0.1)  # stay well under Groq free-tier rate limit
+    print(f"\n=== Relabeling {lang_name}: {len(df)} samples ({max_workers} concurrent workers) ===")
 
-    df["emotion"]    = [r["emotion"] for r in results]
+    results = [None] * len(df)
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(relabel_one, client, row["text_translated"], row["polarity"]): i
+            for i, row in df.iterrows()
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+            except Exception as e:
+                results[idx] = {"emotion": "neutral", "confidence": "low", "reason": f"error: {e}"}
+            completed += 1
+            if completed % 20 == 0 or completed == len(df):
+                print(f"  ...{completed}/{len(df)}")
+
+    df["emotion"]        = [r["emotion"] for r in results]
     df["llm_confidence"] = [r["confidence"] for r in results]
-    df["llm_reason"]  = [r.get("reason","") for r in results]
-    df["language"]    = lang_name
+    df["llm_reason"]     = [r.get("reason","") for r in results]
+    df["language"]       = lang_name
     return df
 
 
