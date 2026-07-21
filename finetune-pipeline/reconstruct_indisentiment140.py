@@ -20,6 +20,12 @@ Honest scope note for the report:
 Translation backend: deep-translator (free, wraps Google Translate web endpoint).
 For production scale, swap to the official Google Cloud Translate API (paid, but stable
 and won't get rate-limited) -- swap point is clearly marked below.
+
+CHECKPOINT/RESUME:
+  Progress is saved to indisentiment140_reconstructed/_checkpoint_done_langs.txt
+  If interrupted, just re-run the same command:
+      python reconstruct_indisentiment140.py
+  Already-completed languages will be skipped automatically.
 """
 
 import os
@@ -33,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SENTIMENT140_CSV = "sentiment140.csv"   # download from kaggle.com/datasets/kazanova/sentiment140
 OUTPUT_DIR       = Path("indisentiment140_reconstructed")
+CHECKPOINT_FILE  = OUTPUT_DIR / "_checkpoint_done_langs.txt"   # ← NEW: tracks completed languages
 SAMPLES_PER_LANG = 300                  # reduced from 1000 for faster turnaround on a proof-of-concept
                                          # scale experiment -- still defensible for this report's scope
 TRAIN_TEST_SPLIT = 0.8
@@ -66,29 +73,21 @@ INDIAN_LANGUAGES = {
 }
 
 # Languages Google Translate does NOT reliably support as of this writing.
-# The paper itself flags this kind of gap (their "% English remaining" column
-# exists precisely because some low-resource languages translate poorly).
-#
-# FALLBACK CHAIN for these languages (tried in order, first success wins):
-#   1. AI4Bharat IndicTrans2  -- purpose-built for Indian languages, best quality
-#   2. Bhashini API (gov't)   -- covers some gaps IndicTrans2 doesn't (esp. Santali, Bodo)
-#   3. Manual curation flag    -- if both fail, don't fake it; flag for human phrase-bank
 LOW_RESOURCE_LANGUAGES = {"Dogri", "Bodo", "Santali", "Manipuri", "Maithili", "Kashmiri", "Konkani", "Sindhi"}
 
 # IndicTrans2 language codes (FLORES-200 style codes used by AI4Bharat models)
-# Reference: https://github.com/AI4Bharat/IndicTrans2
 INDICTRANS2_CODES = {
     "Dogri":     "doi_Deva",
     "Bodo":      "brx_Deva",
     "Santali":   "sat_Olck",
     "Manipuri":  "mni_Mtei",
     "Maithili":  "mai_Deva",
-    "Kashmiri":  "kas_Deva",   # also has kas_Arab variant -- using Devanagari here
+    "Kashmiri":  "kas_Deva",
     "Konkani":   "gom_Deva",
     "Sindhi":    "snd_Arab",
 }
 
-# Bhashini language codes (ISO 639 based, per bhashini.gov.in API docs)
+# Bhashini language codes
 BHASHINI_CODES = {
     "Dogri":     "doi",
     "Bodo":      "brx",
@@ -100,25 +99,38 @@ BHASHINI_CODES = {
     "Sindhi":    "sd",
 }
 
-# Kept for backward compatibility with rest of script
 UNSUPPORTED_OR_UNRELIABLE = LOW_RESOURCE_LANGUAGES
 
 
+# ── Checkpoint helpers ───────────────────────────────────────────────────────
+
+def load_checkpoint() -> set:
+    """Load the set of languages already completed in a previous run."""
+    if CHECKPOINT_FILE.exists():
+        done = set(CHECKPOINT_FILE.read_text().splitlines())
+        done = {lang.strip() for lang in done if lang.strip()}  # clean up any blank lines
+        return done
+    return set()
+
+
+def mark_done(lang_name: str):
+    """Append a language name to the checkpoint file once it is fully saved."""
+    with open(CHECKPOINT_FILE, "a") as f:
+        f.write(lang_name + "\n")
+
+
+# ── Data helpers ─────────────────────────────────────────────────────────────
+
 def load_sentiment140(path: str) -> pd.DataFrame:
-    """
-    Sentiment140 columns: polarity, id, date, query, user, text
-    polarity: 0 = negative, 2 = neutral (rare/absent in practice), 4 = positive
-    """
     cols = ["polarity", "id", "date", "query", "user", "text"]
     df = pd.read_csv(path, encoding="latin-1", names=cols)
     df = df[["polarity", "text"]]
-    df = df[df["text"].str.len() > 10]          # drop too-short/garbage tweets
-    df = df[~df["text"].str.contains(r"http|www", regex=True, na=False)]  # drop link-only noise
+    df = df[df["text"].str.len() > 10]
+    df = df[~df["text"].str.contains(r"http|www", regex=True, na=False)]
     return df.reset_index(drop=True)
 
 
 def stratified_sample(df: pd.DataFrame, n_per_class: int, seed: int) -> pd.DataFrame:
-    """Equal samples per polarity class so the reconstructed set isn't skewed."""
     classes = df["polarity"].unique()
     parts = []
     for c in classes:
@@ -128,14 +140,10 @@ def stratified_sample(df: pd.DataFrame, n_per_class: int, seed: int) -> pd.DataF
     return pd.concat(parts).sample(frac=1, random_state=seed).reset_index(drop=True)
 
 
-def translate_batch(texts: list[str], target_lang: str, batch_size: int = 25) -> list[str]:
-    """
-    Translate a list of English strings to target_lang via Google Translate.
-    Used for the 14 languages Google supports reliably.
+# ── Translation backends ─────────────────────────────────────────────────────
 
-    SWAP POINT for production: replace this function body with a call to
-    google.cloud.translate_v2 (paid, much higher throughput, no rate-limit guessing).
-    """
+def translate_batch(texts: list[str], target_lang: str, batch_size: int = 25) -> list[str]:
+    """Google Translate via deep-translator (free endpoint)."""
     from deep_translator import GoogleTranslator
     translator = GoogleTranslator(source="en", target=target_lang)
     results = []
@@ -147,7 +155,7 @@ def translate_batch(texts: list[str], target_lang: str, batch_size: int = 25) ->
             except Exception as e:
                 print(f"  [warn] translate failed for one item ({target_lang}): {e}")
                 results.append(None)
-            time.sleep(0.3)  # be polite to the free endpoint
+            time.sleep(0.3)
         print(f"  ...{min(i+batch_size, len(texts))}/{len(texts)} translated ({target_lang})")
     return results
 
@@ -155,16 +163,7 @@ def translate_batch(texts: list[str], target_lang: str, batch_size: int = 25) ->
 _indictrans2_model_cache = {}
 
 def translate_batch_indictrans2(texts: list[str], lang_name: str) -> list[str] | None:
-    """
-    Translate using AI4Bharat IndicTrans2 -- purpose-built for Indian languages,
-    significantly better quality than Google Translate for low-resource languages.
-
-    Returns None entirely if the model/library isn't available or the language
-    isn't in IndicTrans2's coverage, so the caller can fall through to Bhashini.
-
-    Requires: pip install IndicTransToolkit torch transformers
-    Model: ai4bharat/indictrans2-en-indic-1B (downloads ~2-4GB on first use)
-    """
+    """Translate using AI4Bharat IndicTrans2."""
     target_code = INDICTRANS2_CODES.get(lang_name)
     if not target_code:
         return None
@@ -187,7 +186,7 @@ def translate_batch_indictrans2(texts: list[str], lang_name: str) -> list[str] |
         tokenizer, model, ip, device = _indictrans2_model_cache[cache_key]
 
         results = []
-        batch_size = 8  # smaller batches -- this is a local model, not an API
+        batch_size = 8
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
             batch_processed = ip.preprocess_batch(batch, src_lang="eng_Latn", tgt_lang=target_code)
@@ -211,21 +210,7 @@ def translate_batch_indictrans2(texts: list[str], lang_name: str) -> list[str] |
 
 
 def translate_batch_bhashini(texts: list[str], lang_name: str) -> list[str] | None:
-    """
-    Translate using Bhashini (Government of India NLP mission) API.
-    Covers some gaps IndicTrans2 doesn't fully handle (esp. Santali, Bodo, Manipuri).
-
-    Returns None if API key isn't configured or the call fails, so caller
-    can fall through to manual curation flag.
-
-    Requires: BHASHINI_API_KEY and BHASHINI_USER_ID env vars
-    (register free at https://bhashini.gov.in -> API access)
-
-    NOTE: Bhashini's API structure changes periodically -- verify the current
-    pipeline/endpoint format at https://bhashini.gov.in/ulca/apis before relying
-    on this in production. The function below uses their documented compute
-    pipeline pattern as of this writing.
-    """
+    """Translate using Bhashini (Government of India NLP mission) API."""
     target_code = BHASHINI_CODES.get(lang_name)
     if not target_code:
         return None
@@ -271,15 +256,7 @@ def translate_batch_bhashini(texts: list[str], lang_name: str) -> list[str] | No
 
 
 def translate_with_fallback_chain(texts: list[str], lang_name: str) -> tuple[list[str] | None, str]:
-    """
-    For low-resource languages: try IndicTrans2 first (best quality for Indian
-    languages), then Bhashini (gov't API, covers some IndicTrans2 gaps),
-    then give up cleanly so the caller flags for manual curation.
-
-    Returns (translated_texts_or_None, method_used_string) -- the method string
-    gets recorded in the output CSV so the report can honestly state which
-    tool produced which language's data.
-    """
+    """IndicTrans2 → Bhashini → manual curation flag."""
     print(f"  [fallback-chain] Trying IndicTrans2 for {lang_name}...")
     result = translate_batch_indictrans2(texts, lang_name)
     if result is not None:
@@ -293,6 +270,8 @@ def translate_with_fallback_chain(texts: list[str], lang_name: str) -> tuple[lis
     print(f"  [fallback-chain] Both tools failed/unavailable for {lang_name} -- flagging for manual curation.")
     return None, "manual_curation_needed"
 
+
+# ── Core pipeline ────────────────────────────────────────────────────────────
 
 def build_language_dataset(df_sample: pd.DataFrame, lang_name: str, lang_code: str) -> pd.DataFrame:
     print(f"\n=== Building {lang_name} ({lang_code}) ===")
@@ -334,9 +313,10 @@ def save_with_split(df: pd.DataFrame, lang_name: str):
     train.to_csv(lang_dir / "train.csv", index=False)
     test.to_csv(lang_dir / "test.csv", index=False)
 
-    print(f"  Saved {lang_name}: {len(train)} train / {len(test)} test "
-          f"-> {lang_dir}")
+    print(f"  Saved {lang_name}: {len(train)} train / {len(test)} test -> {lang_dir}")
 
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     random.seed(RANDOM_SEED)
@@ -348,65 +328,93 @@ def main():
         print("Place the extracted CSV in this directory and re-run.")
         return
 
+    # ── Load checkpoint ──────────────────────────────────────────────────────
+    done_langs = load_checkpoint()
+    if done_langs:
+        print(f"\n[RESUME MODE] Skipping {len(done_langs)} already-completed language(s): {sorted(done_langs)}")
+        print(f"[RESUME MODE] Delete {CHECKPOINT_FILE} to start completely fresh.\n")
+    else:
+        print("\n[FRESH START] No checkpoint found -- starting from the beginning.\n")
+
+    # ── Load & sample data ───────────────────────────────────────────────────
     print("Loading Sentiment140...")
     df_full = load_sentiment140(SENTIMENT140_CSV)
     print(f"Loaded {len(df_full)} usable tweets after cleaning.")
 
     df_sample = stratified_sample(df_full, n_per_class=SAMPLES_PER_LANG // 2, seed=RANDOM_SEED)
-    print(f"Sampled {len(df_sample)} tweets (stratified by polarity) "
-          f"for per-language translation.")
+    print(f"Sampled {len(df_sample)} tweets (stratified by polarity) for per-language translation.")
 
-    # Split into two groups:
-    #   - Google Translate languages: safe to run concurrently, each request
-    #     is independent and the API handles parallel load fine at low worker counts
-    #   - Low-resource languages (IndicTrans2/Bhashini): run sequentially, since
-    #     IndicTrans2 loads one shared model into memory and isn't thread-safe
-    #     to call from multiple threads simultaneously
+    # ── Split languages into two groups ─────────────────────────────────────
     google_langs       = {k: v for k, v in INDIAN_LANGUAGES.items() if k not in LOW_RESOURCE_LANGUAGES}
     low_resource_langs = {k: v for k, v in INDIAN_LANGUAGES.items() if k in LOW_RESOURCE_LANGUAGES}
 
+    # Filter out already-done languages from both groups
+    google_langs_todo       = {k: v for k, v in google_langs.items()       if k not in done_langs}
+    low_resource_langs_todo = {k: v for k, v in low_resource_langs.items() if k not in done_langs}
+
     summary_rows = []
 
-    print(f"\n=== Translating {len(google_langs)} languages concurrently (4 workers) ===")
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(build_language_dataset, df_sample, name, code): name
-            for name, code in google_langs.items()
-        }
-        for future in as_completed(futures):
-            lang_name = futures[future]
-            try:
-                lang_df = future.result()
-            except Exception as e:
-                print(f"  [error] {lang_name} failed entirely: {e}")
-                continue
+    # ── Google Translate languages (concurrent) ──────────────────────────────
+    if google_langs_todo:
+        print(f"\n=== Translating {len(google_langs_todo)} language(s) concurrently (4 workers) ===")
+        print(f"    Remaining: {sorted(google_langs_todo.keys())}")
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(build_language_dataset, df_sample, name, code): name
+                for name, code in google_langs_todo.items()
+            }
+            for future in as_completed(futures):
+                lang_name = futures[future]
+                try:
+                    lang_df = future.result()
+                except Exception as e:
+                    print(f"  [error] {lang_name} failed entirely: {e}")
+                    continue
+                save_with_split(lang_df, lang_name)
+                mark_done(lang_name)   # ← save progress immediately after each language
+                summary_rows.append({
+                    "language": lang_name,
+                    "code": google_langs[lang_name],
+                    "samples": len(lang_df),
+                    "status": lang_df["translation_status"].iloc[0] if len(lang_df) else "empty",
+                })
+                print(f"  [done] {lang_name} finished ({len(lang_df)} samples) -- checkpoint saved.")
+    else:
+        print(f"\n[skip] All Google Translate languages already done.")
+
+    # ── Low-resource languages (sequential) ─────────────────────────────────
+    if low_resource_langs_todo:
+        print(f"\n=== Processing {len(low_resource_langs_todo)} low-resource language(s) sequentially ===")
+        print(f"    Remaining: {sorted(low_resource_langs_todo.keys())}")
+        for lang_name, lang_code in low_resource_langs_todo.items():
+            lang_df = build_language_dataset(df_sample, lang_name, lang_code)
             save_with_split(lang_df, lang_name)
+            mark_done(lang_name)       # ← save progress immediately after each language
             summary_rows.append({
                 "language": lang_name,
-                "code": google_langs[lang_name],
+                "code": lang_code,
                 "samples": len(lang_df),
                 "status": lang_df["translation_status"].iloc[0] if len(lang_df) else "empty",
             })
-            print(f"  [done] {lang_name} finished ({len(lang_df)} samples)")
+            print(f"  [done] {lang_name} finished ({len(lang_df)} samples) -- checkpoint saved.")
+    else:
+        print(f"\n[skip] All low-resource languages already done.")
 
-    print(f"\n=== Processing {len(low_resource_langs)} low-resource languages sequentially ===")
-    for lang_name, lang_code in low_resource_langs.items():
-        lang_df = build_language_dataset(df_sample, lang_name, lang_code)
-        save_with_split(lang_df, lang_name)
-        summary_rows.append({
-            "language": lang_name,
-            "code": lang_code,
-            "samples": len(lang_df),
-            "status": lang_df["translation_status"].iloc[0] if len(lang_df) else "empty",
-        })
+    # ── Summary ──────────────────────────────────────────────────────────────
+    if summary_rows:
+        summary = pd.DataFrame(summary_rows)
+        # Append to summary CSV (don't overwrite previously written rows)
+        summary_path = OUTPUT_DIR / "_summary.csv"
+        if summary_path.exists():
+            existing = pd.read_csv(summary_path)
+            summary = pd.concat([existing, summary]).drop_duplicates(subset="language").reset_index(drop=True)
+        summary.to_csv(summary_path, index=False)
+        print("\n=== THIS RUN'S RESULTS ===")
+        print(summary.to_string(index=False))
 
-    summary = pd.DataFrame(summary_rows)
-    summary.to_csv(OUTPUT_DIR / "_summary.csv", index=False)
-    print("\n=== DONE ===")
-    print(summary.to_string(index=False))
-    print(f"\nLanguages needing manual curation (no reliable MT support):")
-    print(f"  {sorted(LOW_RESOURCE_LANGUAGES)}")
-    print(f"\nNext step: run the relabeling pipeline (relabel_emotions.py) on this output.")
+    print("\n=== ALL DONE ===")
+    print(f"Languages needing manual curation: {sorted(LOW_RESOURCE_LANGUAGES)}")
+    print(f"Next step: run the relabeling pipeline (relabel_emotions.py) on this output.")
 
 
 if __name__ == "__main__":
